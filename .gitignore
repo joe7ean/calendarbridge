@@ -1,0 +1,27 @@
+# Build output
+js/
+css/
+
+# Dependencies
+node_modules/
+vendor/
+
+# PHP
+.phpunit.result.cache
+phpunit.result.cache
+
+# Logs & caches
+*.log
+.cache/
+
+# IDE / editor
+.cursor/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Nextcloud app signing key (never commit)
+*.pem
+*.crt
+*.key

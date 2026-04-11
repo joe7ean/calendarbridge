@@ -1,0 +1,29 @@
+{
+    "name": "your-org/calendarbridge",
+    "description": "Nextcloud Calendar Bridge app",
+    "type": "nextcloud-app",
+    "require": {
+        "php": "^8.1"
+    },
+    "require-dev": {
+        "nextcloud/ocp": "^30.0",
+        "phpunit/phpunit": "^10.5",
+        "sabre/vobject": "^4.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "OCA\\CalendarBridge\\": "lib/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "OCA\\CalendarBridge\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit --configuration phpunit.xml"
+    },
+    "extra": {
+        "nc-app-note": "No runtime PHP dependencies beyond NC itself. composer install is only for dev (OCP stubs + PHPUnit). sabre/vobject is provided by NC's own vendor/."
+    }
+}

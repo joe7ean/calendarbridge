@@ -1,0 +1,43 @@
+{
+    "name": "calendarbridge",
+    "description": "Nextcloud Calendar Bridge — subscribe to external iCal feeds and share them with groups",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev": "webpack --node-env development",
+        "watch": "webpack --node-env development --watch",
+        "build": "webpack --node-env production",
+        "test": "jest --passWithNoTests"
+    },
+    "dependencies": {
+        "@nextcloud/auth": "^2.5.3",
+        "@nextcloud/axios": "^2.5.2",
+        "@nextcloud/dialogs": "^7.3.0",
+        "@nextcloud/initial-state": "^3.0.0",
+        "@nextcloud/l10n": "^3.4.1",
+        "@nextcloud/router": "^3.1.0",
+        "@nextcloud/vue": "^9.6.0",
+        "pinia": "^2.2.0",
+        "vue": "^3.5.13",
+        "vue-material-design-icons": "^5.3.1"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.22.9",
+        "@nextcloud/eslint-config": "^8.4.1",
+        "@nextcloud/webpack-vue-config": "^7.0.2",
+        "@vue/test-utils": "^2.4.6",
+        "babel-loader": "^10.0.0",
+        "css-loader": "^7.1.1",
+        "jest": "^29.7.0",
+        "jest-environment-jsdom": "^29.7.0",
+        "node-polyfill-webpack-plugin": "4.0.0",
+        "sass": "^1.64.2",
+        "sass-loader": "^16.0.2",
+        "style-loader": "^4.0.0",
+        "ts-loader": "^9.4.4",
+        "vue-loader": "^17.4.2",
+        "webpack": "^5.88.2",
+        "webpack-cli": "^6.0.1",
+        "webpack-dev-server": "^5.0.2"
+    }
+}

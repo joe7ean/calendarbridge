@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>calendarbridge</id>
+    <name>Calendar Bridge</name>
+    <summary>Subscribe to external iCal feeds and share them read-only with groups</summary>
+    <description><![CDATA[
+Calendar Bridge lets administrators subscribe to external iCal/WebCal feeds and automatically
+share them as read-only relay calendars with Nextcloud groups.
+
+Instead of every group member manually adding an external calendar link, an admin configures
+the feed once. The app fetches it in the background and shares the resulting internal calendar
+with the selected groups — no action required from end users.
+
+Features:
+- Subscribe to any public or authenticated iCal/WebCal feed
+- Automatic background sync (configurable interval, minimum 15 minutes)
+- Read-only sharing with one or more Nextcloud groups
+- HTTP ETag/Last-Modified caching to avoid unnecessary transfers
+- Diff-based sync: only changed events are written
+- Optional stripping of ATTENDEE/ORGANIZER fields (Privacy by Design)
+- Admin notifications on persistent fetch failures
+- Manual sync and connection test from the admin UI
+    ]]></description>
+    <version>0.1.0</version>
+    <licence>agpl</licence>
+    <author mail="you@example.com" homepage="https://github.com/your-org/calendarbridge">Your Name</author>
+    <namespace>CalendarBridge</namespace>
+    <category>organization</category>
+    <bugs>https://github.com/your-org/calendarbridge/issues</bugs>
+    <screenshot>https://raw.githubusercontent.com/your-org/calendarbridge/main/screenshots/admin-panel.png</screenshot>
+    <dependencies>
+        <nextcloud min-version="30" max-version="32"/>
+    </dependencies>
+    <background-jobs>
+        <job>OCA\CalendarBridge\BackgroundJob\SyncJob</job>
+    </background-jobs>
+    <settings>
+        <admin>OCA\CalendarBridge\Settings\AdminSettings</admin>
+        <admin-section>OCA\CalendarBridge\Settings\AdminSection</admin-section>
+    </settings>
+</info>
