@@ -24,11 +24,11 @@ Features:
     ]]></description>
     <version>0.1.0</version>
     <licence>agpl</licence>
-    <author mail="you@example.com" homepage="https://github.com/your-org/calendarbridge">Your Name</author>
+    <author mail="joe7ean@users.noreply.github.com" homepage="https://github.com/joe7ean">joe7ean</author>
     <namespace>CalendarBridge</namespace>
     <category>organization</category>
-    <bugs>https://github.com/your-org/calendarbridge/issues</bugs>
-    <screenshot>https://raw.githubusercontent.com/your-org/calendarbridge/main/screenshots/admin-panel.png</screenshot>
+    <bugs>https://github.com/joe7ean/calendarbridge/issues</bugs>
+    <screenshot>https://raw.githubusercontent.com/joe7ean/calendarbridge/main/screenshots/admin-panel.png</screenshot>
     <dependencies>
         <nextcloud min-version="30" max-version="32"/>
     </dependencies>

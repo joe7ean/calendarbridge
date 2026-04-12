@@ -1,363 +1,271 @@
-# Calendar Bridge for Nextcloud
+# Calendar Bridge
 
-Ein externer iCal-Feed, ein interner Relay-Kalender, automatisch für Gruppen freigegeben.
+A Nextcloud app that lets administrators subscribe to external iCal/WebCal feeds once, mirror them internally as **relay calendars**, and share them **read-only** with groups—so members do not have to add the same subscription link themselves.
 
-**App-ID:** `calendarbridge`  
-**Kategorie:** Organization / Groupware  
-**Lizenz:** AGPL-3.0
+| | |
+|---|---|
+| **App ID** | `calendarbridge` (folder name under `apps/`) |
+| **Display name** | Calendar Bridge |
+| **Category** | Organization / groupware |
+| **License** | AGPL-3.0 |
+| **Source** | [github.com/joe7ean/calendarbridge](https://github.com/joe7ean/calendarbridge) |
 
 ---
 
-## Was macht diese App?
+## Naming: repository, app ID, and `nc` prefixes
 
-Vereine, Teams und Organisationen teilen oft Kalenderinformationen über öffentliche iCal-Links (z.B. von einer anderen Nextcloud-Instanz, einem Sportportal oder einem Vereinsmanagementsystem). Ohne diese App müsste jedes Mitglied diesen Link manuell in seinem Kalender einpflegen.
+- The **repository** is named `calendarbridge`, which matches how many Nextcloud apps are named: short, descriptive, no mandatory prefix.
+- The **app ID** (`calendarbridge` in `appinfo/info.xml`) is Nextcloud’s technical key. Keep it stable once the app is in the store or installed at sites—renaming is painful.
+- **`nc` or `nextcloud` in the name?** Official and common community apps often do **not** use that: examples include `calendar`, `contacts`, `deck`, `tables`. An `nc`-style prefix is more common for **GitHub repos** when a generic name is taken, or for forks—it is **not** an App Store requirement. Discoverability comes from the store listing (title and description), not the repo string alone.
+- **Earlier working title:** *SubShare* (workspace was *ncSubShare*). The product name **Calendar Bridge** reflects what the app does: bridge an external feed into internal group calendars.
 
-**Calendar Bridge** löst das zentral:
+---
 
-1. Ein Admin abonniert einen externen iCal-Feed einmalig in der App.
-2. Die App holt den Feed regelmäßig im Hintergrund (Cron-Job).
-3. Die Events werden in einen internen "Relay-Kalender" eines Service-Users geschrieben.
-4. Dieser Kalender wird automatisch **read-only** an Nextcloud-Gruppen freigegeben.
-5. Alle Gruppenmitglieder sehen die Events sofort in ihrem Nextcloud-Kalender — ohne eigene Konfiguration.
+## What it does
+
+1. An admin subscribes to an external iCal feed once in the app.
+2. The app fetches the feed on a schedule via Nextcloud’s cron.
+3. Events are written to an internal **relay calendar** owned by a service user.
+4. That calendar is automatically shared **read-only** with the chosen Nextcloud groups.
+5. Group members see events in the Nextcloud Calendar app—no per-user setup.
 
 ---
 
 ## Features
 
-- Externe iCal/WebCal-Feeds abonnieren und intern spiegeln
-- Automatische Synchronisation via Nextcloud-Cron (konfigurierbar: 15 min bis 24 h)
-- Read-only Freigabe an beliebige Nextcloud-Gruppen
-- Mehrere Zielgruppen pro Feed möglich
-- Optionaler HTTP Basic-Auth-Support für geschützte Feeds
-- ETag/Last-Modified-Support: kein unnötiger Traffic wenn sich der Feed nicht geändert hat
-- Diff-basierter Sync: nur geänderte Events werden geschrieben
-- Admin-Benachrichtigung bei dauerhaften Fetch-Fehlern (z.B. geänderter Link)
-- Privacy by Design: ATTENDEE/ORGANIZER-Felder (E-Mail-Adressen) werden standardmäßig vor dem Speichern entfernt
-- DSGVO-konform: alle Daten bleiben auf der eigenen Nextcloud-Instanz
+- Subscribe to external iCal/WebCal feeds and mirror them internally
+- Background sync via Nextcloud cron (configurable interval, e.g. 15 minutes to 24 hours)
+- Read-only sharing with any Nextcloud groups
+- Multiple target groups per feed
+- Optional HTTP Basic authentication for protected feeds
+- ETag / Last-Modified: no redundant download when the feed is unchanged
+- Diff-based sync: only changed `VEVENT`s are written
+- Admin notifications on persistent fetch failures
+- Privacy by default: strip `ATTENDEE` / `ORGANIZER` (email addresses) before storing
+- All processing stays on your instance (no middleman service)
 
 ---
 
-## Voraussetzungen
+## Requirements
 
-- Nextcloud 29 oder neuer
+- Nextcloud **30** through **32** (see `appinfo/info.xml`)
 - PHP 8.1+
-- Nextcloud-Cron muss konfiguriert sein (empfohlen: systemd-Timer oder crontab, nicht Ajax-Cron)
-- Die `dav`-App muss aktiv sein (Standardmäßig der Fall)
+- Reliable Nextcloud cron (recommended: systemd timer or crontab, not Ajax-only cron)
+- **DAV** app enabled (default)
 
 ---
 
 ## Installation
 
-### Über den App Store (empfohlen)
+### App Store (when published)
 
-In Nextcloud: **Apps → Organization → Calendar Bridge → Installieren**
+Once listed in the [Nextcloud App Store](https://apps.nextcloud.com): **Apps → Organization → Calendar Bridge → Enable**.
 
-### Manuell
+### Manual install from Git
 
 ```bash
 cd /var/www/nextcloud/apps
-git clone https://github.com/your-org/calendarbridge.git
+git clone https://github.com/joe7ean/calendarbridge.git calendarbridge
 cd calendarbridge
 composer install --no-dev
 npm ci && npm run build
 ```
 
-Anschließend in Nextcloud unter **Apps** aktivieren.
+Then enable the app under **Apps**. The install directory **must** be named `calendarbridge` (same as the app ID).
 
 ---
 
-## Konfiguration
+## Configuration
 
-### 1. Service-User einrichten
+### 1. Service user
 
-Siehe den ausführlichen Abschnitt [Service-User einrichten](#service-user-einrichten) weiter unten.
+See [Setting up the service user](#setting-up-the-service-user).
 
-### 2. Globale App-Einstellungen
+### 2. Global settings
 
-Unter **Einstellungen → Administration → Calendar Bridge**:
+**Settings → Administration → Calendar Bridge**
 
-| Einstellung | Standard | Beschreibung |
+| Setting | Default | Description |
 |---|---|---|
-| Standard-Service-User | — | NC-User, dem Relay-Kalender gehören |
-| Standard-Sync-Intervall | 1 Stunde | Wie oft Feeds abgerufen werden |
-| Minimales Sync-Intervall | 15 Minuten | Untergrenze (schützt externe Server) |
-| Max. Feed-Größe | 10 MB | Sicherheitslimit für Downloads |
-| Nur HTTPS erlauben | Ja | HTTP-Feeds ablehnen (empfohlen) |
-| ATTENDEE-Felder entfernen | Ja | E-Mail-Adressen nicht speichern |
-| HTTP-Timeout | 30 Sekunden | |
+| Default service user | — | User that owns relay calendars |
+| Default sync interval | 1 hour | How often feeds are fetched |
+| Minimum sync interval | 15 minutes | Lower bound (reduces load on remote servers) |
+| Max feed size | 10 MB | Download safety limit |
+| HTTPS only | On | Reject plain HTTP feeds (recommended) |
+| Strip ATTENDEE fields | On | Do not persist email addresses from the feed |
+| HTTP timeout | 30 seconds | |
 
-### 3. Feed anlegen
+### 3. Create a feed
 
-Im Admin-Panel → **Feed hinzufügen**:
+Admin panel → **Add feed**
 
-- **Feed-URL**: `https://example.org/remote.php/dav/public-calendars/TOKEN/` oder `webcal://...`
-- **Anzeigename**: Wird als Kalenderbezeichnung für Gruppenmiitglieder angezeigt
-- **Farbe**: Kalenderfarbe (Hex)
-- **Zielgruppen**: Multiselect — welche NC-Gruppen Zugriff erhalten
-- **Sync-Intervall**: Presets: 15 min / 30 min / 1 h / 2 h / 6 h / 12 h / 24 h
-- **HTTP-Authentifizierung**: Optional, für zugangsbeschränkte Feeds
-- **ATTENDEE-Felder entfernen**: Pro-Feed-Override der globalen Einstellung
+- **Feed URL:** `https://…/remote.php/dav/public-calendars/TOKEN/` or `webcal://…`
+- **Display name**, **color**, **target groups** (multi-select)
+- **Sync interval**, optional **HTTP auth**, per-feed **strip ATTENDEE**
 
 ---
 
-## Test & Manueller Sync
+## Testing and manual sync
 
-### "Verbindung testen" (Dry Run)
+### Test connection (dry run)
 
-Beim Anlegen oder Bearbeiten eines Feeds kann die URL vor dem Speichern getestet werden. Die App fetcht die URL und zeigt an:
+Before saving: fetch without writing to the database or calendar. Shows event count, date range, calendar title from the feed, and encoding or structure issues. Limit: 5 tests per minute per admin.
 
-- Anzahl gefundener Events
-- Zeitraum (erstes / letztes Event)
-- Kalender-Anzeigename aus dem iCal-Feed
-- Erkannte Encoding-Probleme oder fehlerhafte iCal-Struktur
+### Sync now
 
-Es wird dabei **nichts** in die Datenbank oder den Kalender geschrieben. Limit: 5 Tests pro Minute pro Admin.
+For existing feeds; useful after creation or URL fixes. Response includes counts of added/updated/deleted events and duration.
 
-### "Jetzt synchronisieren"
-
-Für bestehende Feeds gibt es einen "Jetzt synchronisieren"-Button. Nützlich:
-
-- Nach Erstanlage (nicht bis zum nächsten Cron-Lauf warten)
-- Nach Korrektur einer fehlerhaften Feed-URL
-- Zur manuellen Überprüfung ob neue Events angekommen sind
-
-Die Antwort enthält: Anzahl hinzugefügter / aktualisierter / gelöschter Events und die Dauer.
-
-**Rate-Limiting:**
-
-- Max. 3 manuelle Syncs innerhalb von 5 Minuten pro Admin (über alle Feeds)
-- Pro Feed: min. 5 Minuten Abstand zwischen zwei manuellen Syncs
-- Bei Überschreitung: 429-Fehler mit Countdown ("Nächster Sync in 3 Minuten")
+**Rate limits:** at most 3 manual syncs in 5 minutes per admin (across all feeds); at least 5 minutes between manual syncs for the same feed—otherwise HTTP 429 with guidance.
 
 ---
 
-## Sync-Verhalten
+## Sync behaviour
 
-### Intervall-Empfehlungen
-
-| Anwendungsfall | Empfehlung |
+| Scenario | Suggested interval |
 |---|---|
-| Vereinskalender, selten geändert | 6–24 h |
-| Wettkampfplan, wöchentlich aktualisiert | 1–2 h |
-| Veranstaltungskalender, häufig aktualisiert | 30 min – 1 h |
-| Echtzeit-kritisch | Nicht geeignet — iCal ist kein Push-Protokoll |
+| Club calendar, rare changes | 6–24 h |
+| Schedules updated weekly | 1–2 h |
+| Frequent updates | 30 min–1 h |
+| “Real time” | iCal is not push—use something else |
 
-> **Hinweis:** Sehr kurze Intervalle (< 30 min) können die ToS des externen Kalenderanbieters verletzen. Die App erzwingt ein Minimum von 15 Minuten.
+Very short intervals may violate remote providers’ terms; the app enforces a **15 minute** minimum.
 
-### Caching
+**Caching:** on `304 Not Modified`, no full re-download or re-parse.
 
-Die App nutzt HTTP-ETag und Last-Modified-Header. Wenn der externe Feed unverändert ist, antwortet der Server mit `304 Not Modified` — kein Download, kein Re-Parse, kein DB-Schreibzugriff.
-
-### Diff-Sync
-
-Jeder VEVENT wird anhand seiner `UID` identifiziert. Beim Sync:
-
-1. Bestehende UIDs im Relay-Kalender laden
-2. UIDs im externen Feed mit `LAST-MODIFIED` vergleichen
-3. Nur neue/geänderte Events schreiben
-4. Aus dem Feed entfernte Events werden im Relay-Kalender gelöscht
+**Diff:** match by `UID`, compare `LAST-MODIFIED`, delete events removed from the feed from the relay calendar.
 
 ---
 
-## Fehlerbehandlung
+## Error handling
 
-### Was passiert wenn sich ein iCal-Link ändert?
+When fetches keep failing (404, wrong content type, auth errors, …):
 
-Wenn ein externer Feed-Link ungültig wird (HTTP 404, falsche Content-Type, Auth-Fehler):
+- Existing events in the relay calendar are **left unchanged**
+- Error counter increases; after **3** consecutive failures: **admin notification**
+- Details in the admin panel
+- After **10** consecutive failures: feed is **paused**
 
-- Bestehende Events im Relay-Kalender bleiben **unverändert** (kein Löschen bei Fehlern)
-- Der Fehlerzähler wird erhöht
-- Nach 3 aufeinanderfolgenden Fehlern: **Admin-Benachrichtigung** über das Nextcloud-Benachrichtigungssystem (Glocke-Icon)
-- Die Fehlermeldung ist im Admin-Panel sichtbar (Zeitstempel + HTTP-Statuscode)
-- Nach 10 aufeinanderfolgenden Fehlern: Feed wird automatisch pausiert
-
-**Lösung:** Admin öffnet den betroffenen Feed im Admin-Panel, aktualisiert die URL und klickt "Jetzt synchronisieren".
+**Fix:** correct the URL in the admin panel and run **Sync now**.
 
 ---
 
-## Duplikate & Portabilität
+## Duplicates and portability
 
-### Darf dieselbe URL mehrfach eingetragen werden?
+- **Same service user + same URL:** blocked by a database constraint.
+- **Same URL, different service users:** allowed; the UI may warn.
+- **One feed, many groups:** one feed entry, multiple target groups (recommended).
 
-- **Gleicher Service-User + gleiche URL**: Nein — wird durch Datenbankconstraint verhindert.
-- **Verschiedene Service-User, gleiche URL**: Technisch möglich. Sinnvoll wenn verschiedene Gruppen unterschiedliche Kalender-Setups benötigen. Die App zeigt im UI eine Warnung.
-- **Ein Feed, mehrere Gruppen**: Empfohlener Weg — ein Feed-Eintrag, mehrere Zielgruppen.
-
-### Portabilität / Service-User wechseln
-
-Da Relay-Kalender immer aus dem Feed neu aufgebaut werden, ist ein "Umzug" einfach:
-
-1. Neuen Feed-Eintrag mit dem neuen Service-User anlegen
-2. Ersten Sync abwarten (Events werden automatisch neu aufgebaut)
-3. Alten Feed deaktivieren und löschen
-
-> **Wichtig:** Wenn ein Service-User-Account aus Nextcloud gelöscht wird, werden alle zugehörigen Relay-Kalender gelöscht. Betroffene Feeds zeigen im Admin-Panel einen Fehler.
+**Changing service user:** create a new feed with the new user, wait for sync, then disable/delete the old entry. If the user is deleted in Nextcloud, their calendars go away—migrate feeds first.
 
 ---
 
-## Sicherheit
+## Security
 
-### SSRF-Schutz
-
-Die App nutzt ausschließlich `OCP\Http\Client\IClientService` von Nextcloud, das private IP-Ranges und Loopback-Adressen automatisch blockiert. Zusätzlich wird `OCP\Security\IRemoteHostValidator` für eine explizite Vorabprüfung verwendet. HTTP (ohne TLS) ist standardmäßig deaktiviert.
-
-### Credential-Sicherheit
-
-HTTP Basic-Auth-Passwörter werden mit `OCP\Security\ICrypto` verschlüsselt gespeichert und nie in API-Responses zurückgegeben.
-
-### Zugriffskontrolle
-
-Die App-Konfiguration ist ausschließlich für Nextcloud-Administratoren zugänglich (`#[AuthorizedAdminSetting]`). Gruppenmiitglieder haben nur lesenden Zugriff auf die geteilten Relay-Kalender und können diese nicht verändern.
+- Fetches use Nextcloud’s `IClientService` and `IRemoteHostValidator` (SSRF protections); plain HTTP is off by default.
+- Basic-auth passwords are stored encrypted (`ICrypto`) and never returned in API responses.
+- Configuration is admin-only (`#[AuthorizedAdminSetting]`); end users only see shared calendars read-only.
 
 ---
 
-## Datenschutz / DSGVO
+## Privacy
 
-- **Datensparsamkeit**: ATTENDEE- und ORGANIZER-Felder (die E-Mail-Adressen enthalten können) werden standardmäßig vor dem Speichern entfernt.
-- **Lokale Verarbeitung**: Alle Daten verbleiben auf der eigenen Nextcloud-Instanz. Keine Drittanbieter.
-- **Löschkonzept**: Wird ein Feed gelöscht, wird der zugehörige Relay-Kalender inklusive aller Events sofort entfernt.
-- **Keine Analyse**: Event-Inhalte werden ausschließlich zur Synchronisation verarbeitet, nicht analysiert oder ausgewertet.
-- **Logging**: Logs enthalten nur technische Metadaten (Feed-ID, HTTP-Statuscode, Anzahl geänderter Events) — keine Event-Inhalte oder persönlichen Daten.
+- By default, `ATTENDEE` / `ORGANIZER` emails are not stored.
+- Event content is not used for analytics beyond synchronization.
+- Deleting a feed removes its relay calendar.
+- Logs use technical metadata only, not event bodies.
 
 ---
 
-## Entwicklung
+## Development
 
-### Voraussetzungen
-
-- Node.js 20+
-- PHP 8.1+
-- Composer
-- Laufende Nextcloud-Instanz (lokal oder Docker)
-
-### Setup
+Prerequisites: Node.js 20+, PHP 8.1+, Composer, a Nextcloud instance (local or Docker).
 
 ```bash
-git clone https://github.com/your-org/calendarbridge.git
+git clone https://github.com/joe7ean/calendarbridge.git
 cd calendarbridge
 
-# PHP-Abhängigkeiten
 composer install
-
-# JS-Abhängigkeiten + Build
 npm ci
-npm run dev        # Entwicklungs-Build
-npm run watch      # Watch-Modus
-npm run build      # Produktions-Build
+npm run dev      # development build
+npm run watch    # watch mode
+npm run build    # production build
 ```
-
-### Tests
 
 ```bash
-composer test      # PHPUnit Backend-Tests
-npm run test       # Jest Frontend-Tests
+composer test    # PHPUnit
+npm run test     # Jest
 ```
 
-### App-Struktur
+### Layout
 
 ```
 calendarbridge/
-├── appinfo/                   # App-Metadaten, Routing
-├── lib/
-│   ├── AppInfo/               # DI-Container-Bootstrap
-│   ├── BackgroundJob/         # Cron-Jobs (SyncJob)
-│   ├── Controller/            # HTTP-Controller (admin-only)
-│   ├── Db/                    # Entity + Mapper
-│   ├── Migration/             # Datenbankmigrationen
-│   └── Service/               # Business-Logik
-├── src/                       # Vue 3 Frontend-Quellen
-├── templates/                 # PHP-Templates
-└── tests/                     # Backend- und Frontend-Tests
+├── appinfo/
+├── lib/                 # AppInfo, BackgroundJob, Controller, Db, Migration, Service
+├── src/                 # Vue 3
+├── templates/
+└── tests/
 ```
-
-Für eine detaillierte Architekturübersicht und Implementierungsnotizen siehe [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
-## Service-User einrichten
+## Setting up the service user
 
-Calendar Bridge benötigt einen Nextcloud-User, dem die Relay-Kalender gehören. Dieser User ist kein echtes Login-Konto — er fungiert ausschließlich als "Kalender-Eigentümer" im System.
+Calendar Bridge needs a Nextcloud user as **owner** of relay calendars. Prefer an account nobody logs into as a person—otherwise the Calendar UI shows full controls (e.g. “remove share”) that fight what the app manages automatically.
 
-### Warum ein dedizierter Account?
-
-Wenn ein vorhandener Admin-Account (z.B. `ncAdmin`) als Service-User verwendet wird, erscheinen die Relay-Kalender in dessen Nextcloud-Kalender-App mit **vollen Verwaltungsoptionen** — inklusive "Freigabe aufheben". Das ist verwirrend, weil Calendar Bridge die Freigabe beim nächsten Sync ohnehin wiederherstellt.
-
-Mit einem dedizierten Account, in den sich niemand einloggt, entfällt dieses Problem vollständig.
-
-### Account anlegen
+### Create the account
 
 ```bash
-# 1. User anlegen — Passwort wird nur für die initiale Erstellung benötigt
 php occ user:add \
   --display-name="Calendar Bridge Service" \
   --password-from-env \
   calbridge-service
-# → SMTP-Benachrichtigung wird nicht verschickt, kein E-Mail-Attribut gesetzt
+```
 
-# Oder interaktiv (occ fragt nach Passwort):
+Or interactively:
+
+```bash
 php occ user:add --display-name="Calendar Bridge Service" calbridge-service
 ```
 
-> **Wichtig:** Kein `occ user:disable`! Ein deaktivierter User kann zwar keinen Login durchführen, aber auch keine CalDAV-Kalender verwalten — die Sync-Operationen würden fehlschlagen.
+Do **not** run `occ user:disable` on this user—disabled users are unsuitable for CalDAV operations the app must perform.
 
-### Login-Zugang sperren (ohne Account zu deaktivieren)
+### Lock down login (keep the account enabled)
 
-Der Account soll aktiv bleiben, aber kein Passwort-Login erlaubt sein:
-
-```bash
-# Passwort auf einen langen zufälligen Wert setzen den niemand kennt
-php occ user:resetpassword --password-from-env calbridge-service
-# RNDPW=$(openssl rand -base64 48) gilt als Wert für RNDPW-Variable
-```
-
-Oder direkt in der Datenbank — der Hash eines nie herausgegebenen Passworts:
+Set a random password nobody knows:
 
 ```bash
-# Zufälliges Passwort generieren und sofort verwerfen
 RNDPW=$(openssl rand -base64 48)
 OC_PASS="$RNDPW" php occ user:resetpassword --password-from-env calbridge-service
 unset RNDPW OC_PASS
 ```
 
-Damit ist kein Brute-Force-Angriff auf den Account möglich, und niemand kann sich einloggen — die CalDAV-API-Zugriffe der App laufen aber weiterhin korrekt (intern, ohne Login).
-
-### Optionale Härtung
+### Optional hardening
 
 ```bash
-# Aus allen Gruppen entfernen (kein Zugriff auf Gruppeninhalte)
-# — normalerweise nicht nötig, da der Account keine Gruppenrechte braucht
-
-# Nur die nötigsten Quotas setzen
 php occ user:setting calbridge-service files quota "0 B"
-# → Kein Datei-Upload möglich (Kalender nutzen keinen Dateispeicher)
 ```
 
-### In der App eintragen
+### In the app
 
-Im Admin-Panel unter **Einstellungen → Administration → Calendar Bridge → Globale Einstellungen**:
-
-- **Standard-Service-User** → `calbridge-service` auswählen
-
-Beim Anlegen einzelner Feeds kann pro Feed auch ein abweichender Service-User gewählt werden.
-
-### Was passiert wenn der Account gelöscht wird?
-
-Nextcloud löscht beim Entfernen eines Users automatisch alle zugehörigen Kalender. Betroffene Feeds zeigen im Admin-Panel einen Fehler und lassen sich nicht mehr synchronisieren. Vor dem Löschen des Accounts sollten alle Feeds auf einen anderen Service-User umgezogen werden:
-
-1. Feeds bearbeiten → anderen Service-User auswählen → speichern
-2. Manuellen Sync auslösen (Relay-Kalender wird unter neuem User neu erstellt)
-3. Erst dann den alten Account löschen
+**Settings → Administration → Calendar Bridge:** set **Default service user** to `calbridge-service` (per-feed override is supported).
 
 ---
 
-## Support & Feedback
+## Support and security
 
-- **Bugs & Feature-Requests**: [GitHub Issues](https://github.com/your-org/calendarbridge/issues)
-- **Fragen**: [Nextcloud Help Forum](https://help.nextcloud.com)
-- **Sicherheitslücken**: Bitte **nicht** öffentlich melden — stattdessen per E-Mail an security@your-org.example
+| Topic | Where |
+|---|---|
+| Bugs & features | [GitHub Issues](https://github.com/joe7ean/calendarbridge/issues) |
+| General Nextcloud | [help.nextcloud.com](https://help.nextcloud.com) |
+| Vulnerabilities | Do **not** file public issues; use [GitHub Security](https://github.com/joe7ean/calendarbridge/security) for private reporting, or contact the maintainer via GitHub |
 
 ---
 
-## Lizenz
+## License
 
-[AGPL-3.0](LICENSE) — wie alle Nextcloud-Apps.
+[AGPL-3.0](LICENSE)—same as most Nextcloud apps.
+
+---
+
+*Maintainer: [joe7ean](https://github.com/joe7ean)*

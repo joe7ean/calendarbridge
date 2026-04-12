@@ -1,5 +1,5 @@
 {
-    "name": "your-org/calendarbridge",
+    "name": "joe7ean/calendarbridge",
     "description": "Nextcloud Calendar Bridge app",
     "type": "nextcloud-app",
     "require": {
