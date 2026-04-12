@@ -70,15 +70,7 @@ Anschließend in Nextcloud unter **Apps** aktivieren.
 
 ### 1. Service-User einrichten
 
-Die App benötigt einen Nextcloud-User, dem die Relay-Kalender gehören. Empfohlen ist ein dedizierter Account ohne Login-Berechtigung:
-
-```bash
-# User anlegen (kein Passwort-Login nötig)
-occ user:add --display-name="Calendar Bridge Service" calbridge-service
-occ user:disable calbridge-service
-```
-
-Alternativ kann ein vorhandener Admin-Account verwendet werden.
+Siehe den ausführlichen Abschnitt [Service-User einrichten](#service-user-einrichten) weiter unten.
 
 ### 2. Globale App-Einstellungen
 
@@ -279,6 +271,82 @@ calendarbridge/
 ```
 
 Für eine detaillierte Architekturübersicht und Implementierungsnotizen siehe [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+---
+
+## Service-User einrichten
+
+Calendar Bridge benötigt einen Nextcloud-User, dem die Relay-Kalender gehören. Dieser User ist kein echtes Login-Konto — er fungiert ausschließlich als "Kalender-Eigentümer" im System.
+
+### Warum ein dedizierter Account?
+
+Wenn ein vorhandener Admin-Account (z.B. `ncAdmin`) als Service-User verwendet wird, erscheinen die Relay-Kalender in dessen Nextcloud-Kalender-App mit **vollen Verwaltungsoptionen** — inklusive "Freigabe aufheben". Das ist verwirrend, weil Calendar Bridge die Freigabe beim nächsten Sync ohnehin wiederherstellt.
+
+Mit einem dedizierten Account, in den sich niemand einloggt, entfällt dieses Problem vollständig.
+
+### Account anlegen
+
+```bash
+# 1. User anlegen — Passwort wird nur für die initiale Erstellung benötigt
+php occ user:add \
+  --display-name="Calendar Bridge Service" \
+  --password-from-env \
+  calbridge-service
+# → SMTP-Benachrichtigung wird nicht verschickt, kein E-Mail-Attribut gesetzt
+
+# Oder interaktiv (occ fragt nach Passwort):
+php occ user:add --display-name="Calendar Bridge Service" calbridge-service
+```
+
+> **Wichtig:** Kein `occ user:disable`! Ein deaktivierter User kann zwar keinen Login durchführen, aber auch keine CalDAV-Kalender verwalten — die Sync-Operationen würden fehlschlagen.
+
+### Login-Zugang sperren (ohne Account zu deaktivieren)
+
+Der Account soll aktiv bleiben, aber kein Passwort-Login erlaubt sein:
+
+```bash
+# Passwort auf einen langen zufälligen Wert setzen den niemand kennt
+php occ user:resetpassword --password-from-env calbridge-service
+# RNDPW=$(openssl rand -base64 48) gilt als Wert für RNDPW-Variable
+```
+
+Oder direkt in der Datenbank — der Hash eines nie herausgegebenen Passworts:
+
+```bash
+# Zufälliges Passwort generieren und sofort verwerfen
+RNDPW=$(openssl rand -base64 48)
+OC_PASS="$RNDPW" php occ user:resetpassword --password-from-env calbridge-service
+unset RNDPW OC_PASS
+```
+
+Damit ist kein Brute-Force-Angriff auf den Account möglich, und niemand kann sich einloggen — die CalDAV-API-Zugriffe der App laufen aber weiterhin korrekt (intern, ohne Login).
+
+### Optionale Härtung
+
+```bash
+# Aus allen Gruppen entfernen (kein Zugriff auf Gruppeninhalte)
+# — normalerweise nicht nötig, da der Account keine Gruppenrechte braucht
+
+# Nur die nötigsten Quotas setzen
+php occ user:setting calbridge-service files quota "0 B"
+# → Kein Datei-Upload möglich (Kalender nutzen keinen Dateispeicher)
+```
+
+### In der App eintragen
+
+Im Admin-Panel unter **Einstellungen → Administration → Calendar Bridge → Globale Einstellungen**:
+
+- **Standard-Service-User** → `calbridge-service` auswählen
+
+Beim Anlegen einzelner Feeds kann pro Feed auch ein abweichender Service-User gewählt werden.
+
+### Was passiert wenn der Account gelöscht wird?
+
+Nextcloud löscht beim Entfernen eines Users automatisch alle zugehörigen Kalender. Betroffene Feeds zeigen im Admin-Panel einen Fehler und lassen sich nicht mehr synchronisieren. Vor dem Löschen des Accounts sollten alle Feeds auf einen anderen Service-User umgezogen werden:
+
+1. Feeds bearbeiten → anderen Service-User auswählen → speichern
+2. Manuellen Sync auslösen (Relay-Kalender wird unter neuem User neu erstellt)
+3. Erst dann den alten Account löschen
 
 ---
 
