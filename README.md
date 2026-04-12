@@ -119,7 +119,7 @@ For existing feeds; useful after creation or URL fixes. Response includes counts
 
 ---
 
-## Sync behaviour
+## Sync behavior
 
 | Scenario | Suggested interval |
 |---|---|
@@ -262,9 +262,13 @@ php occ user:setting calbridge-service files quota "0 B"
 
 ---
 
+## Screenshots (App Store)
+
+`screenshots/admin-panel.png` is used by `appinfo/info.xml` for the [Nextcloud App Store](https://apps.nextcloud.com) listing (GitHub `raw` URL on the default branch).
+
 ## License
 
-[AGPL-3.0](LICENSE)—same as most Nextcloud apps.
+[AGPL-3.0-only](LICENSE)—same family of license as most Nextcloud apps.
 
 ---
 

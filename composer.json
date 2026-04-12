@@ -1,7 +1,8 @@
 {
     "name": "joe7ean/calendarbridge",
-    "description": "Nextcloud Calendar Bridge app",
+    "description": "Nextcloud app: subscribe to external iCal/WebCal feeds and share relay calendars read-only with groups",
     "type": "nextcloud-app",
+    "license": "AGPL-3.0-only",
     "require": {
         "php": "^8.1"
     },

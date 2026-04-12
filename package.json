@@ -3,6 +3,15 @@
     "description": "Nextcloud Calendar Bridge — subscribe to external iCal feeds and share them with groups",
     "version": "0.1.0",
     "private": true,
+    "license": "AGPL-3.0-only",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/joe7ean/calendarbridge.git"
+    },
+    "bugs": {
+        "url": "https://github.com/joe7ean/calendarbridge/issues"
+    },
+    "homepage": "https://github.com/joe7ean/calendarbridge#readme",
     "scripts": {
         "dev": "webpack --node-env development",
         "watch": "webpack --node-env development --watch",
