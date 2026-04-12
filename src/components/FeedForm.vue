@@ -58,6 +58,10 @@
 			@search="searchGroups"
 		/>
 
+		<NcNoteCard type="info" class="calbridge-share-note">
+			{{ t('calendarbridge', 'Calendar Bridge manages group sharing automatically. Changes made via the Calendar app (e.g. removing the share) will be restored on the next sync. Group members can hide this calendar from their personal view using "Remove from my calendars" — this does not affect other members.') }}
+		</NcNoteCard>
+
 		<!-- Sync interval -->
 		<div class="calbridge-form__row calbridge-form__row--align">
 			<label>{{ t('calendarbridge', 'Sync interval') }}</label>
@@ -120,7 +124,7 @@
 </template>
 
 <script>
-import { NcButton, NcCheckboxRadioSwitch, NcLoadingIcon, NcPasswordField, NcSelect, NcTextField } from '@nextcloud/vue'
+import { NcButton, NcCheckboxRadioSwitch, NcLoadingIcon, NcNoteCard, NcPasswordField, NcSelect, NcTextField } from '@nextcloud/vue'
 import IconEye from 'vue-material-design-icons/Eye.vue'
 import { translate as t } from '@nextcloud/l10n'
 import { feedsApi, groupsApi, usersApi } from '../services/api.js'
@@ -138,7 +142,7 @@ const INTERVAL_OPTIONS = [
 
 export default {
 	name: 'FeedForm',
-	components: { NcButton, NcCheckboxRadioSwitch, NcLoadingIcon, NcPasswordField, NcSelect, NcTextField, IconEye },
+	components: { NcButton, NcCheckboxRadioSwitch, NcLoadingIcon, NcNoteCard, NcPasswordField, NcSelect, NcTextField, IconEye },
 	props: {
 		feed: { type: Object, default: null },
 		settings: { type: Object, default: () => ({}) },
@@ -317,6 +321,10 @@ function debounce(fn, ms) {
 	border-radius: var(--border-radius);
 	cursor: pointer;
 	padding: 2px;
+}
+.calbridge-share-note {
+	margin-top: 4px;
+	margin-bottom: 4px;
 }
 .calbridge-form__details {
 	margin-top: 8px;

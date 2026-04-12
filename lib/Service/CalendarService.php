@@ -171,6 +171,11 @@ class CalendarService {
      * Uses direct DB access because CalDavBackend::updateShares() in NC 32
      * requires an IShareable object that is not easily constructable externally.
      *
+     * The serviceUser is NOT added as a read-only sharer here — they remain
+     * the calendar owner and can manage it via CalDAV. Group members who want
+     * to hide the calendar from their personal view can use "Remove from my
+     * calendars" in the NC Calendar app, which only affects their own view.
+     *
      * @param string[] $groupIds
      */
     public function shareWithGroups(int $calendarId, array $groupIds): void {
@@ -184,23 +189,9 @@ class CalendarService {
                 ->andWhere($qb->expr()->like('principaluri', $qb->createNamedParameter('principals/groups/%')));
             $qb->executeStatement();
 
-            // Insert new group shares
+            // Insert new group shares (read-only)
             foreach ($groupIds as $gid) {
-                $qb = $this->db->getQueryBuilder();
-                $qb->insert('dav_shares')
-                    ->values([
-                        'principaluri' => $qb->createNamedParameter('principals/groups/' . $gid),
-                        'type'         => $qb->createNamedParameter('calendar'),
-                        'access'       => $qb->createNamedParameter(self::ACCESS_READ_ONLY, IQueryBuilder::PARAM_INT),
-                        'resourceid'   => $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT),
-                    ]);
-                try {
-                    $qb->executeStatement();
-                } catch (\Exception $e) {
-                    if (!str_contains($e->getMessage(), 'Duplicate') && !str_contains($e->getMessage(), 'UNIQUE')) {
-                        throw $e;
-                    }
-                }
+                $this->upsertShare($calendarId, 'principals/groups/' . $gid);
             }
 
             $this->logger->info('CalendarBridge: calendar sharing updated', [
@@ -212,6 +203,25 @@ class CalendarService {
                 'calendarId' => $calendarId,
                 'error'      => $e->getMessage(),
             ]);
+        }
+    }
+
+    private function upsertShare(int $calendarId, string $principalUri): void {
+        $qb = $this->db->getQueryBuilder();
+        $qb->insert('dav_shares')
+            ->values([
+                'principaluri' => $qb->createNamedParameter($principalUri),
+                'type'         => $qb->createNamedParameter('calendar'),
+                'access'       => $qb->createNamedParameter(self::ACCESS_READ_ONLY, IQueryBuilder::PARAM_INT),
+                'resourceid'   => $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT),
+            ]);
+        try {
+            $qb->executeStatement();
+        } catch (\Exception $e) {
+            // Ignore duplicate — share already exists
+            if (!str_contains($e->getMessage(), 'Duplicate') && !str_contains($e->getMessage(), 'UNIQUE')) {
+                throw $e;
+            }
         }
     }
 
