@@ -1,0 +1,15 @@
+# Copy to Makefile.local (gitignored) and adjust per machine or per Nextcloud test instance.
+#
+#   cp Makefile.local.example Makefile.local
+#
+# This file is included before defaults in the Makefile, so assignments here win.
+# You can also override on one command line, e.g.:  make deploy NC_HOST=root@nc-docker
+
+# SSH target (user@host)
+NC_HOST = root@10.0.0.100
+
+# Remote path where Nextcloud apps live (directory containing one folder per app ID)
+NC_APPS_DIR = /var/lib/nextcloud/apps
+
+# How to run `occ` on the server (php binary + path to occ must match your install)
+OCC = ssh $(NC_HOST) 'php83 /usr/share/webapps/nextcloud/occ'

@@ -14,6 +14,9 @@ phpunit.result.cache
 *.log
 .cache/
 
+# Local deploy overrides (see Makefile.local.example)
+Makefile.local
+
 # IDE / editor
 .cursor/
 .idea/
