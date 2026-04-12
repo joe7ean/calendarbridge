@@ -2,15 +2,23 @@
 	<div class="calbridge-form">
 		<h3>{{ isEdit ? t('calendarbridge', 'Edit feed') : t('calendarbridge', 'Add feed') }}</h3>
 
-		<!-- Feed URL + Test -->
-		<div class="calbridge-form__row">
-			<NcTextField
-				:label="t('calendarbridge', 'Feed URL')"
-				:placeholder="'https://example.org/remote.php/dav/public-calendars/TOKEN/'"
-				v-model="form.feedUrl"
-				:error="!!urlError"
-				:helper-text="urlError || previewInfo"
-			/>
+		<!-- Feed URL -->
+		<NcTextField
+			:label="t('calendarbridge', 'Feed URL')"
+			:placeholder="'https://example.org/remote.php/dav/public-calendars/TOKEN/'"
+			v-model="form.feedUrl"
+			:error="!!urlError"
+		/>
+
+		<!-- Calendar name -->
+		<NcTextField
+			:label="t('calendarbridge', 'Calendar name')"
+			:placeholder="t('calendarbridge', 'Shown to group members')"
+			v-model="form.feedName"
+		/>
+
+		<!-- Test button + result -->
+		<div class="calbridge-form__test">
 			<NcButton
 				type="secondary"
 				:disabled="!form.feedUrl || previewing"
@@ -20,16 +28,11 @@
 					<NcLoadingIcon v-if="previewing" :size="20" />
 					<IconEye v-else :size="20" />
 				</template>
-				{{ t('calendarbridge', 'Test') }}
+				{{ t('calendarbridge', 'Test connection') }}
 			</NcButton>
+			<span v-if="previewInfo" class="calbridge-form__preview-ok">{{ previewInfo }}</span>
+			<span v-if="urlError" class="calbridge-form__preview-err">{{ urlError }}</span>
 		</div>
-
-		<!-- Calendar name -->
-		<NcTextField
-			:label="t('calendarbridge', 'Calendar name')"
-			:placeholder="t('calendarbridge', 'Shown to group members')"
-			v-model="form.feedName"
-		/>
 
 		<!-- Color -->
 		<div class="calbridge-form__row calbridge-form__row--align">
@@ -302,17 +305,33 @@ function debounce(fn, ms) {
 
 <style scoped>
 .calbridge-form {
-	min-width: 340px;
+	min-width: 280px;
 	max-width: 500px;
 }
 .calbridge-form__row {
 	display: flex;
 	gap: 8px;
-	align-items: flex-end;
+	align-items: center;
 }
 .calbridge-form__row--align {
 	align-items: center;
 	gap: 12px;
+}
+.calbridge-form__test {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin-top: 4px;
+	margin-bottom: 4px;
+}
+.calbridge-form__preview-ok {
+	color: var(--color-success);
+	font-size: 0.9em;
+}
+.calbridge-form__preview-err {
+	color: var(--color-error);
+	font-size: 0.9em;
 }
 .calbridge-color-input {
 	width: 44px;
