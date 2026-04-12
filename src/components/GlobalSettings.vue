@@ -2,10 +2,13 @@
 	<div class="calbridge-global-settings">
 		<h3>{{ t('calendarbridge', 'Global settings') }}</h3>
 
-		<NcTextField
-			:label="t('calendarbridge', 'Default service user (calendar owner)')"
-			:placeholder="t('calendarbridge', 'e.g. calbridge-service')"
+		<NcSelect
+			:input-label="t('calendarbridge', 'Default service user (calendar owner)')"
+			:options="users"
+			label="label"
 			v-model="form.default_service_user"
+			:loading="loadingUsers"
+			@search="searchUsers"
 		/>
 
 		<div class="calbridge-form__row calbridge-form__row--align">
@@ -13,8 +16,7 @@
 			<NcSelect
 				v-model="form.default_sync_interval"
 				:options="intervalOptions"
-				:reduce="o => o.value"
-				:get-option-label="o => o.label"
+				label="label"
 				style="min-width: 180px"
 			/>
 		</div>
@@ -61,7 +63,17 @@
 <script>
 import { NcButton, NcCheckboxRadioSwitch, NcLoadingIcon, NcSelect, NcTextField } from '@nextcloud/vue'
 import { translate as t } from '@nextcloud/l10n'
-import { settingsApi } from '../services/api.js'
+import { settingsApi, usersApi } from '../services/api.js'
+
+const INTERVAL_OPTIONS = [
+	{ value: 900,   label: t('calendarbridge', '15 minutes') },
+	{ value: 1800,  label: t('calendarbridge', '30 minutes') },
+	{ value: 3600,  label: t('calendarbridge', '1 hour') },
+	{ value: 7200,  label: t('calendarbridge', '2 hours') },
+	{ value: 21600, label: t('calendarbridge', '6 hours') },
+	{ value: 43200, label: t('calendarbridge', '12 hours') },
+	{ value: 86400, label: t('calendarbridge', '24 hours') },
+]
 
 export default {
 	name: 'GlobalSettings',
@@ -73,7 +85,15 @@ export default {
 
 	data() {
 		return {
-			form: { ...this.settings },
+			form: {
+				...this.settings,
+				// Will be resolved to objects in mounted() after API loads
+				default_service_user: null,
+				default_sync_interval: INTERVAL_OPTIONS.find(o => o.value === (this.settings.default_sync_interval ?? 3600))
+				                       ?? INTERVAL_OPTIONS[2],
+			},
+			users: [],
+			loadingUsers: false,
 			saving: false,
 			saveError: '',
 		}
@@ -81,26 +101,45 @@ export default {
 
 	computed: {
 		intervalOptions() {
-			return [
-				{ value: 900,   label: t('calendarbridge', '15 minutes') },
-				{ value: 1800,  label: t('calendarbridge', '30 minutes') },
-				{ value: 3600,  label: t('calendarbridge', '1 hour') },
-				{ value: 7200,  label: t('calendarbridge', '2 hours') },
-				{ value: 21600, label: t('calendarbridge', '6 hours') },
-				{ value: 43200, label: t('calendarbridge', '12 hours') },
-				{ value: 86400, label: t('calendarbridge', '24 hours') },
-			]
+			return INTERVAL_OPTIONS
 		},
+	},
+
+	async mounted() {
+		await this.loadUsers()
 	},
 
 	methods: {
 		t,
+
+		async loadUsers(search = '') {
+			this.loadingUsers = true
+			try {
+				const { data } = await usersApi.list(search)
+				this.users = data.map(u => ({ ...u, label: `${u.displayName} (${u.uid})` }))
+				// Resolve stored UID string to full object
+				const stored = this.settings.default_service_user
+				if (stored) {
+					this.form.default_service_user = this.users.find(u => u.uid === stored) ?? null
+				}
+			} finally {
+				this.loadingUsers = false
+			}
+		},
+
+		searchUsers: debounce(function(search) { this.loadUsers(search) }, 300),
+
 		async save() {
 			this.saving = true
 			this.saveError = ''
 			try {
-				await settingsApi.save(this.form)
-				this.$emit('saved', { ...this.form })
+				const payload = {
+					...this.form,
+					default_service_user:   this.form.default_service_user?.uid ?? '',
+					default_sync_interval:  this.form.default_sync_interval?.value ?? 3600,
+				}
+				await settingsApi.save(payload)
+				this.$emit('saved', payload)
 			} catch (e) {
 				this.saveError = e.response?.data?.error ?? t('calendarbridge', 'Could not save settings')
 			} finally {
@@ -108,6 +147,14 @@ export default {
 			}
 		},
 	},
+}
+
+function debounce(fn, ms) {
+	let timer
+	return function(...args) {
+		clearTimeout(timer)
+		timer = setTimeout(() => fn.apply(this, args), ms)
+	}
 }
 </script>
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\Controller;
 
 use OCA\CalendarBridge\AppInfo\Application;
+use OCA\CalendarBridge\BackgroundJob\SyncJob;
 use OCA\CalendarBridge\Db\Feed;
 use OCA\CalendarBridge\Db\FeedMapper;
 use OCA\CalendarBridge\Service\CalendarService;
@@ -18,6 +19,7 @@ use OCP\AppFramework\Http\Attribute\AuthorizedAdminSetting;
 use OCP\AppFramework\Http\Attribute\UserRateLimit;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Controller;
+use OCP\BackgroundJob\IJobList;
 use OCP\IRequest;
 use OCP\Security\ICrypto;
 
@@ -28,6 +30,7 @@ class FeedController extends Controller {
         private readonly FeedService $feedService,
         private readonly SyncService $syncService,
         private readonly CalendarService $calendarService,
+        private readonly IJobList $jobList,
         private readonly ICrypto $crypto,
     ) {
         parent::__construct(Application::APP_ID, $request);
@@ -94,6 +97,9 @@ class FeedController extends Controller {
             }
             throw $e;
         }
+
+        // Register a dedicated background job for this feed
+        $this->jobList->add(SyncJob::class, ['feedId' => $saved->getId()]);
 
         return new DataResponse($saved->toApiArray(), Http::STATUS_CREATED);
     }
@@ -173,6 +179,9 @@ class FeedController extends Controller {
         }
 
         $this->feedMapper->delete($feed);
+
+        // Remove the background job for this feed
+        $this->jobList->remove(SyncJob::class, ['feedId' => $id]);
 
         return new DataResponse([], Http::STATUS_NO_CONTENT);
     }

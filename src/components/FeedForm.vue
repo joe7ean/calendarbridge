@@ -39,10 +39,9 @@
 
 		<!-- Service user -->
 		<NcSelect
-			:label="t('calendarbridge', 'Service user (calendar owner)')"
+			:input-label="t('calendarbridge', 'Service user (calendar owner)')"
 			:options="users"
-			:get-option-label="u => `${u.displayName} (${u.uid})`"
-			:reduce="u => u.uid"
+			label="label"
 			v-model="form.serviceUser"
 			:loading="loadingUsers"
 			@search="searchUsers"
@@ -50,10 +49,9 @@
 
 		<!-- Target groups -->
 		<NcSelect
-			:label="t('calendarbridge', 'Share read-only with groups')"
+			:input-label="t('calendarbridge', 'Share read-only with groups')"
 			:options="groups"
-			:get-option-label="g => g.displayName"
-			:reduce="g => g.id"
+			label="displayName"
 			v-model="form.targetGroups"
 			multiple
 			:loading="loadingGroups"
@@ -66,8 +64,7 @@
 			<NcSelect
 				v-model="form.syncInterval"
 				:options="intervalOptions"
-				:reduce="o => o.value"
-				:get-option-label="o => o.label"
+				label="label"
 				style="min-width: 180px"
 			/>
 		</div>
@@ -129,6 +126,16 @@ import { translate as t } from '@nextcloud/l10n'
 import { feedsApi, groupsApi, usersApi } from '../services/api.js'
 import { showError } from '@nextcloud/dialogs'
 
+const INTERVAL_OPTIONS = [
+	{ value: 900,   label: t('calendarbridge', '15 minutes') },
+	{ value: 1800,  label: t('calendarbridge', '30 minutes') },
+	{ value: 3600,  label: t('calendarbridge', '1 hour') },
+	{ value: 7200,  label: t('calendarbridge', '2 hours') },
+	{ value: 21600, label: t('calendarbridge', '6 hours') },
+	{ value: 43200, label: t('calendarbridge', '12 hours') },
+	{ value: 86400, label: t('calendarbridge', '24 hours') },
+]
+
 export default {
 	name: 'FeedForm',
 	components: { NcButton, NcCheckboxRadioSwitch, NcLoadingIcon, NcPasswordField, NcSelect, NcTextField, IconEye },
@@ -159,15 +166,7 @@ export default {
 			return this.form.feedUrl && this.form.feedName && this.form.serviceUser
 		},
 		intervalOptions() {
-			return [
-				{ value: 900,   label: t('calendarbridge', '15 minutes') },
-				{ value: 1800,  label: t('calendarbridge', '30 minutes') },
-				{ value: 3600,  label: t('calendarbridge', '1 hour') },
-				{ value: 7200,  label: t('calendarbridge', '2 hours') },
-				{ value: 21600, label: t('calendarbridge', '6 hours') },
-				{ value: 43200, label: t('calendarbridge', '12 hours') },
-				{ value: 86400, label: t('calendarbridge', '24 hours') },
-			]
+			return INTERVAL_OPTIONS
 		},
 	},
 
@@ -180,13 +179,17 @@ export default {
 
 		buildForm() {
 			const f = this.feed
+			// For edit mode: find matching objects from loaded lists; fall back to plain values
+			// until lists are loaded (watcher in mounted will re-resolve)
 			return {
 				feedUrl:        f?.feedUrl ?? '',
 				feedName:       f?.feedName ?? '',
 				calendarColor:  f?.calendarColor ?? '#0082c9',
-				serviceUser:    f?.serviceUser ?? (this.settings?.default_service_user ?? ''),
-				targetGroups:   f?.targetGroups ?? [],
-				syncInterval:   f?.syncInterval ?? (this.settings?.default_sync_interval ?? 3600),
+				// NcSelect v9: store full objects; resolved against loaded lists in mounted()
+				serviceUser:    null,
+				targetGroups:   [],
+			syncInterval:   INTERVAL_OPTIONS.find(o => o.value === (f?.syncInterval ?? this.settings?.default_sync_interval ?? 3600))
+			                ?? INTERVAL_OPTIONS[2], // default: 1 hour
 				stripAttendees: f?.stripAttendees ?? (this.settings?.strip_attendees_default ?? true),
 				verifySsl:      f?.verifySsl ?? true,
 				active:         f?.active ?? true,
@@ -201,6 +204,10 @@ export default {
 			try {
 				const { data } = await groupsApi.list(search)
 				this.groups = data
+				// In edit mode: resolve stored group IDs to objects
+				if (this.feed?.targetGroups?.length) {
+					this.form.targetGroups = data.filter(g => this.feed.targetGroups.includes(g.id))
+				}
 			} finally {
 				this.loadingGroups = false
 			}
@@ -210,7 +217,13 @@ export default {
 			this.loadingUsers = true
 			try {
 				const { data } = await usersApi.list(search)
-				this.users = data
+				// Add composite label for display
+				this.users = data.map(u => ({ ...u, label: `${u.displayName} (${u.uid})` }))
+				// In edit mode: resolve stored uid to object; for new: use default
+				const defaultUid = this.feed?.serviceUser ?? this.settings?.default_service_user ?? ''
+				if (defaultUid) {
+					this.form.serviceUser = this.users.find(u => u.uid === defaultUid) ?? null
+				}
 			} finally {
 				this.loadingUsers = false
 			}
@@ -252,7 +265,11 @@ export default {
 			try {
 				const payload = {
 					...this.form,
-					httpAuthPass: this.form.httpAuthPass || undefined,
+					// Extract scalar values from NcSelect objects
+					serviceUser:   this.form.serviceUser?.uid ?? this.form.serviceUser ?? '',
+					targetGroups:  this.form.targetGroups.map(g => g.id ?? g),
+					syncInterval:  this.form.syncInterval?.value ?? this.form.syncInterval ?? 3600,
+					httpAuthPass:  this.form.httpAuthPass || undefined,
 					clearHttpAuth: this.form.clearHttpAuth || undefined,
 				}
 				if (this.isEdit) {

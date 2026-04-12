@@ -70,15 +70,7 @@ class SyncService {
                 $feed->isVerifySsl(),
             );
 
-            if ($result['notModified']) {
-                $this->logger->debug('CalendarBridge: feed not modified (304)', ['feedId' => $feedId]);
-                $this->markSuccess($feed, $result['etag']);
-                return ['added' => 0, 'updated' => 0, 'deleted' => 0, 'durationMs' => $this->elapsed($startTime), 'skipped' => false];
-            }
-
-            $calendar = $this->feedService->sanitize($result['calendar'], $feed->isStripAttendees());
-
-            // Ensure relay calendar exists
+            // Ensure relay calendar exists (idempotent)
             $calendarId = $feed->getCalendarId();
             if ($calendarId === null) {
                 $calendarId = $this->calendarService->ensureCalendarExists(
@@ -87,16 +79,25 @@ class SyncService {
                     $feed->getCalendarColor() ?? '#0082c9',
                 );
                 $feed->setCalendarId($calendarId);
+                $this->feedMapper->update($feed);
             }
+
+            // Always re-apply group sharing (idempotent — safe to call on every sync)
+            $this->calendarService->shareWithGroups($calendarId, $feed->getTargetGroupsArray());
+
+            if ($result['notModified']) {
+                $this->logger->debug('CalendarBridge: feed not modified (304)', ['feedId' => $feedId]);
+                $this->markSuccess($feed, $result['etag']);
+                return ['added' => 0, 'updated' => 0, 'deleted' => 0, 'durationMs' => $this->elapsed($startTime), 'skipped' => false];
+            }
+
+            $calendar = $this->feedService->sanitize($result['calendar'], $feed->isStripAttendees());
 
             // Sync events
             $stats = $this->calendarService->syncEvents($calendarId, $calendar);
 
-            // Re-apply group sharing (idempotent — safe to call on every sync)
-            $this->calendarService->shareWithGroups($calendarId, $feed->getTargetGroupsArray());
-
             $this->logger->info('CalendarBridge: sync completed', [
-                'feedId' => $feedId,
+                'feedId'   => $feedId,
                 'feedName' => $feed->getFeedName(),
                 ...$stats,
             ]);

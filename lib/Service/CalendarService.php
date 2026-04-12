@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\Service;
 
 use OCA\DAV\CalDAV\CalDavBackend;
+use OCP\DB\QueryBuilder\IQueryBuilder;
+use OCP\IDBConnection;
 use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 
 class CalendarService {
+    // NC DAV sharing access level constants (oc_dav_shares.access)
+    private const ACCESS_READ_ONLY = 3;
+
     public function __construct(
         private readonly CalDavBackend $calDavBackend,
+        private readonly IDBConnection $db,
         private readonly IUserManager $userManager,
         private readonly LoggerInterface $logger,
     ) {
@@ -60,6 +66,8 @@ class CalendarService {
      * Delete a relay calendar and all its objects.
      */
     public function deleteCalendar(int $calendarId): void {
+        // Also remove all shares first
+        $this->shareWithGroups($calendarId, []);
         try {
             $this->calDavBackend->deleteCalendar($calendarId, true);
         } catch (\Exception $e) {
@@ -107,11 +115,30 @@ class CalendarService {
 
             if (!isset($existing[$uid])) {
                 $uri = $uid . '.ics';
-                $this->calDavBackend->createCalendarObject($calendarId, $uri, $icsData);
-                $added++;
+                try {
+                    $this->calDavBackend->createCalendarObject($calendarId, $uri, $icsData);
+                    $added++;
+                } catch (\Exception $e) {
+                    // Object already exists with a different URI (from a previous partial sync).
+                    // Find it by UID and update instead.
+                    $found = $this->findObjectByUid($calendarId, $uid);
+                    if ($found !== null) {
+                        if ($this->hasChanged($found['calendardata'] ?? '', $icsData)) {
+                            $this->calDavBackend->updateCalendarObject($calendarId, $found['uri'], $icsData);
+                            $updated++;
+                        }
+                        $existing[$uid] = $found;
+                    } else {
+                        $this->logger->warning('CalendarBridge: could not create or locate object', [
+                            'calendarId' => $calendarId,
+                            'uid'        => $uid,
+                            'error'      => $e->getMessage(),
+                        ]);
+                    }
+                }
             } else {
                 // Only update if LAST-MODIFIED or SEQUENCE changed
-                if ($this->hasChanged($existing[$uid]['calendardata'], $icsData)) {
+                if ($this->hasChanged($existing[$uid]['calendardata'] ?? '', $icsData)) {
                     $this->calDavBackend->updateCalendarObject(
                         $calendarId,
                         $existing[$uid]['uri'],
@@ -139,30 +166,53 @@ class CalendarService {
 
     /**
      * Share the relay calendar read-only with the specified groups.
-     * Replaces the full share list on every call to stay in sync.
+     * Replaces the full group-share list on every call to stay in sync.
+     *
+     * Uses direct DB access because CalDavBackend::updateShares() in NC 32
+     * requires an IShareable object that is not easily constructable externally.
      *
      * @param string[] $groupIds
      */
     public function shareWithGroups(int $calendarId, array $groupIds): void {
-        $calendar = $this->getCalendarById($calendarId);
-        if ($calendar === null) {
-            $this->logger->warning('CalendarBridge: cannot share — calendar not found', [
+        try {
+            $qb = $this->db->getQueryBuilder();
+
+            // Remove all existing group shares for this calendar
+            $qb->delete('dav_shares')
+                ->where($qb->expr()->eq('resourceid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
+                ->andWhere($qb->expr()->eq('type', $qb->createNamedParameter('calendar')))
+                ->andWhere($qb->expr()->like('principaluri', $qb->createNamedParameter('principals/groups/%')));
+            $qb->executeStatement();
+
+            // Insert new group shares
+            foreach ($groupIds as $gid) {
+                $qb = $this->db->getQueryBuilder();
+                $qb->insert('dav_shares')
+                    ->values([
+                        'principaluri' => $qb->createNamedParameter('principals/groups/' . $gid),
+                        'type'         => $qb->createNamedParameter('calendar'),
+                        'access'       => $qb->createNamedParameter(self::ACCESS_READ_ONLY, IQueryBuilder::PARAM_INT),
+                        'resourceid'   => $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT),
+                    ]);
+                try {
+                    $qb->executeStatement();
+                } catch (\Exception $e) {
+                    if (!str_contains($e->getMessage(), 'Duplicate') && !str_contains($e->getMessage(), 'UNIQUE')) {
+                        throw $e;
+                    }
+                }
+            }
+
+            $this->logger->info('CalendarBridge: calendar sharing updated', [
                 'calendarId' => $calendarId,
+                'groups'     => $groupIds,
             ]);
-            return;
+        } catch (\Exception $e) {
+            $this->logger->error('CalendarBridge: failed to update calendar shares', [
+                'calendarId' => $calendarId,
+                'error'      => $e->getMessage(),
+            ]);
         }
-
-        $add = [];
-        foreach ($groupIds as $gid) {
-            $add[] = [
-                'href'     => 'principal:principals/groups/' . $gid,
-                'readOnly' => true,
-            ];
-        }
-
-        // updateShares($calendar, $add, $remove)
-        // Passing the full $add list each time is idempotent
-        $this->calDavBackend->updateShares($calendar, $add, []);
     }
 
     // -------------------------------------------------------------------------
@@ -205,10 +255,22 @@ class CalendarService {
     }
 
     /**
+     * Find a calendar object by UID when the URI is unknown (conflict resolution fallback).
+     */
+    private function findObjectByUid(int $calendarId, string $uid): ?array {
+        foreach ($this->calDavBackend->getCalendarObjects($calendarId) as $obj) {
+            $objUid = $this->extractUid($obj['calendardata'] ?? '');
+            if ($objUid === $uid) {
+                return $obj;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Simple change detection — compare LAST-MODIFIED or fall back to full diff.
      */
     private function hasChanged(string $existing, string $incoming): bool {
-        // Fast path: compare LAST-MODIFIED timestamps
         preg_match('/^LAST-MODIFIED:(.+)$/m', $existing, $em);
         preg_match('/^LAST-MODIFIED:(.+)$/m', $incoming, $im);
 
@@ -216,7 +278,6 @@ class CalendarService {
             return trim($em[1]) !== trim($im[1]);
         }
 
-        // Fallback: compare SEQUENCE numbers
         preg_match('/^SEQUENCE:(\d+)/m', $existing, $es);
         preg_match('/^SEQUENCE:(\d+)/m', $incoming, $is);
 
@@ -224,27 +285,7 @@ class CalendarService {
             return (int)$es[1] !== (int)$is[1];
         }
 
-        // Last resort: checksum comparison (excluding DTSTAMP which changes every request)
         $clean = fn(string $s) => preg_replace('/^DTSTAMP:.+$/m', '', $s);
         return md5($clean($existing)) !== md5($clean($incoming));
-    }
-
-    private function getCalendarById(int $calendarId): ?array {
-        // CalDavBackend doesn't expose a direct getCalendarById —
-        // use getCalendarObjectById as a workaround via internal method
-        // We store principal in the DB so we can also call getCalendarsForUser.
-        // For now, return a minimal array sufficient for updateShares.
-        try {
-            $row = \OC::$server->getDatabaseConnection()->getQueryBuilder();
-            $row->select('*')
-                ->from('calendars')
-                ->where($row->expr()->eq('id', $row->createNamedParameter($calendarId, \OCP\DB\QueryBuilder\IQueryBuilder::PARAM_INT)));
-            $result = $row->executeQuery();
-            $data   = $result->fetch();
-            $result->closeCursor();
-            return $data ?: null;
-        } catch (\Exception) {
-            return null;
-        }
     }
 }

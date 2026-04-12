@@ -32,9 +32,6 @@ Features:
     <dependencies>
         <nextcloud min-version="30" max-version="32"/>
     </dependencies>
-    <background-jobs>
-        <job>OCA\CalendarBridge\BackgroundJob\SyncJob</job>
-    </background-jobs>
     <settings>
         <admin>OCA\CalendarBridge\Settings\AdminSettings</admin>
         <admin-section>OCA\CalendarBridge\Settings\AdminSection</admin-section>
