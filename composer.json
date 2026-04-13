@@ -18,6 +18,8 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "OCP\\": "tests/stubs/OCP/",
+            "OCA\\DAV\\CalDAV\\": "tests/stubs/OCA/DAV/CalDAV/",
             "OCA\\CalendarBridge\\Tests\\": "tests/"
         }
     },

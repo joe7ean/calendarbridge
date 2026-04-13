@@ -6,7 +6,7 @@ namespace OCA\CalendarBridge\Tests\Unit\Service;
 
 use OCA\CalendarBridge\Service\FeedFetchException;
 use OCA\CalendarBridge\Service\FeedService;
-use OCP\AppFramework\Services\IAppConfig;
+use OCP\IAppConfig;
 use OCP\Http\Client\IClient;
 use OCP\Http\Client\IClientService;
 use OCP\Http\Client\IResponse;

@@ -11,6 +11,7 @@ use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
+use Sabre\VObject\Reader;
 
 class CalendarService {
     // NC DAV sharing access level constants (oc_dav_shares.access)
@@ -92,12 +93,16 @@ class CalendarService {
         $updated = 0;
         $deleted = 0;
 
-        // Index existing objects by UID
+        // Index existing objects by UID (NC bulk list often omits calendardata — hydrate per row).
         $existing = [];
         foreach ($this->calDavBackend->getCalendarObjects($calendarId) as $obj) {
-            $uid = $this->extractUid($obj['calendardata'] ?? '');
-            if ($uid !== null) {
-                $existing[$uid] = $obj;
+            $full = $this->hydrateCalendarObject($calendarId, $obj);
+            if ($full === null) {
+                continue;
+            }
+            $uid = $this->resolveObjectUid($full);
+            if ($uid !== null && $uid !== '') {
+                $existing[$uid] = $full;
             }
         }
 
@@ -118,11 +123,25 @@ class CalendarService {
                 try {
                     $this->calDavBackend->createCalendarObject($calendarId, $uri, $icsData);
                     $added++;
+                    $existing[$uid] = ['uri' => $uri, 'calendardata' => $icsData];
                 } catch (\Exception $e) {
-                    // Object already exists with a different URI (from a previous partial sync).
-                    // Find it by UID and update instead.
-                    $found = $this->findObjectByUid($calendarId, $uid);
+                    if (!$this->isLikelyDuplicateCalendarObjectException($e)) {
+                        $this->logger->warning('CalendarBridge: could not create calendar object', [
+                            'calendarId' => $calendarId,
+                            'uid'        => $uid,
+                            'error'      => $e->getMessage(),
+                        ]);
+                        continue;
+                    }
+                    // Object already exists (same URI, different URI from older sync, or concurrent insert).
+                    $found = $this->calDavBackend->getCalendarObject($calendarId, $uri)
+                        ?? $this->findObjectByUid($calendarId, $uid);
                     if ($found !== null) {
+                        $this->logger->info('CalendarBridge: resolved duplicate calendar object on sync', [
+                            'calendarId' => $calendarId,
+                            'uid'        => $uid,
+                            'uri'        => $found['uri'] ?? $uri,
+                        ]);
                         if ($this->hasChanged($found['calendardata'] ?? '', $icsData)) {
                             $this->calDavBackend->updateCalendarObject($calendarId, $found['uri'], $icsData);
                             $updated++;
@@ -257,11 +276,58 @@ class CalendarService {
         return $cal->serialize();
     }
 
+    /**
+     * UID from serialized calendar data (folding, property params — Sabre; regex fallback).
+     */
     private function extractUid(string $icsData): ?string {
-        if (preg_match('/^UID:(.+)$/m', $icsData, $m)) {
+        if ($icsData === '') {
+            return null;
+        }
+        try {
+            $doc = Reader::read($icsData);
+            try {
+                foreach ($doc->VEVENT ?? [] as $vevent) {
+                    $u = isset($vevent->UID) ? trim((string)$vevent->UID) : '';
+                    if ($u !== '') {
+                        return $u;
+                    }
+                }
+            } finally {
+                $doc->destroy();
+            }
+        } catch (\Throwable) {
+            // Invalid or partial ICS
+        }
+        if (preg_match('/^UID[^:]*:(.+)$/m', $icsData, $m)) {
             return trim($m[1]);
         }
         return null;
+    }
+
+    private function resolveObjectUid(array $obj): ?string {
+        $fromIcs = $this->extractUid($obj['calendardata'] ?? '');
+        if ($fromIcs !== null && $fromIcs !== '') {
+            return $fromIcs;
+        }
+        $fromRow = isset($obj['uid']) ? trim((string)$obj['uid']) : '';
+        return $fromRow !== '' ? $fromRow : null;
+    }
+
+    /**
+     * Bulk rows from getCalendarObjects often omit calendardata; load full row for UID / diff.
+     */
+    private function hydrateCalendarObject(int $calendarId, array $obj): ?array {
+        if (($obj['calendardata'] ?? '') !== '') {
+            return $obj;
+        }
+        return $this->calDavBackend->getCalendarObject($calendarId, $obj['uri']);
+    }
+
+    private function isLikelyDuplicateCalendarObjectException(\Throwable $e): bool {
+        $m = $e->getMessage();
+        return str_contains($m, 'Duplicate')
+            || str_contains($m, '1062')
+            || str_contains($m, 'UNIQUE');
     }
 
     /**
@@ -269,9 +335,13 @@ class CalendarService {
      */
     private function findObjectByUid(int $calendarId, string $uid): ?array {
         foreach ($this->calDavBackend->getCalendarObjects($calendarId) as $obj) {
-            $objUid = $this->extractUid($obj['calendardata'] ?? '');
+            $full = $this->hydrateCalendarObject($calendarId, $obj);
+            if ($full === null) {
+                continue;
+            }
+            $objUid = $this->resolveObjectUid($full);
             if ($objUid === $uid) {
-                return $obj;
+                return $full;
             }
         }
         return null;

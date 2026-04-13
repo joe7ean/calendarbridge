@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OCA\CalendarBridge\Service;
 
-use OCA\CalendarBridge\AppInfo\Application;
 use OCP\IAppConfig;
 use OCP\Http\Client\IClientService;
 use OCP\Security\IRemoteHostValidator;
@@ -13,6 +12,8 @@ use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Reader;
 
 class FeedService {
+    private const APP_ID = 'calendarbridge';
+
     private const MAX_REDIRECTS = 3;
 
     public function __construct(
@@ -39,8 +40,8 @@ class FeedService {
         $url = $this->normaliseUrl($url);
         $this->validateUrl($url);
 
-        $timeout   = $this->appConfig->getValueInt(Application::APP_ID, 'http_timeout', 30);
-        $maxSizeMb = $this->appConfig->getValueInt(Application::APP_ID, 'max_feed_size_mb', 10);
+        $timeout   = $this->appConfig->getValueInt(self::APP_ID, 'http_timeout', 30);
+        $maxSizeMb = $this->appConfig->getValueInt(self::APP_ID, 'max_feed_size_mb', 10);
 
         $headers = ['Accept' => 'text/calendar, application/calendar+json, */*'];
         if ($etag !== null) {
@@ -173,7 +174,7 @@ class FeedService {
     }
 
     private function validateUrl(string $url): void {
-        $allowHttp = $this->appConfig->getValueBool(Application::APP_ID, 'allow_http', false);
+        $allowHttp = $this->appConfig->getValueBool(self::APP_ID, 'allow_http', false);
         $scheme    = parse_url($url, PHP_URL_SCHEME);
 
         if ($scheme === 'http' && !$allowHttp) {
