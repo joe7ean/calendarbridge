@@ -1,56 +1,60 @@
-# Optional per-host overrides (copy Makefile.local.example → Makefile.local)
--include Makefile.local
-
 NC_HOST     ?= root@10.0.0.100
 NC_APPS_DIR ?= /var/lib/nextcloud/apps
 APP_ID      ?= calendarbridge
 DEPLOY_PATH  = $(NC_APPS_DIR)/$(APP_ID)
-OCC         ?= ssh $(NC_HOST) 'php83 /usr/share/webapps/nextcloud/occ'
+OCC          = ssh $(NC_HOST) 'php83 /usr/share/webapps/nextcloud/occ'
 
-# Files to exclude from rsync (dev-only; vendor/ is included after `composer install --no-dev`)
+# Packaged app tarball (see `make release`)
+DIST_DIR         ?= dist
+RELEASE_STAGING  ?= .release-staging
+RELEASE_VER      := $(shell sed -n 's/.*<version>\([^<]*\)<\/version>.*/\1/p' appinfo/info.xml | head -1)
+RELEASE_NAME     := $(APP_ID)-$(RELEASE_VER)
+RELEASE_TAR      := $(DIST_DIR)/$(RELEASE_NAME).tar.gz
+
+# Prefer project-local Composer from `scripts/setup-build-env.sh` (.dev-tools/ is gitignored).
+COMPOSER_PHAR    := $(abspath .dev-tools/composer.phar)
+ifneq ($(wildcard $(COMPOSER_PHAR)),)
+COMPOSER         ?= php $(COMPOSER_PHAR)
+else
+COMPOSER         ?= composer
+endif
+
+# Files to exclude from rsync (build artifacts, dev files)
 RSYNC_EXCLUDE = \
 	--exclude=node_modules \
+	--exclude=vendor \
 	--exclude='.git' \
 	--exclude='.cursor' \
 	--exclude='*.plan.md' \
 	--exclude=tests \
 	--exclude=phpunit.xml \
-	--exclude='*.log' \
-	--exclude=Makefile.local
+	--exclude='*.log'
 
-.PHONY: help build composer-prod deploy deploy-fast enable disable upgrade migrate watch dev test clean
+.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test clean composer-prod release release-clean
 
 help:
 	@echo ""
-	@echo "  Solo maintainer / test instances"
-	@echo "  ─────────────────────────────────"
-	@echo "  1. cp Makefile.local.example Makefile.local  (set NC_HOST, NC_APPS_DIR, OCC)"
-	@echo "  2. make deploy    # composer --no-dev + npm build + rsync"
-	@echo "  3. make enable     # first time only (or after fresh NC)"
-	@echo "  Override for another host: make deploy NC_HOST=root@other.box"
-	@echo ""
-	@echo "  make composer-prod   composer install --no-dev (runtime autoload → vendor/)"
-	@echo "  make build           Build JS/CSS assets (production)"
-	@echo "  make dev             Development JS build"
-	@echo "  make watch           Watch + rebuild on change"
-	@echo "  make deploy          composer-prod + build + rsync to $(NC_HOST):$(DEPLOY_PATH)"
-	@echo "  make deploy-fast     rsync only (no composer/npm; use after make deploy once)"
-	@echo "  make enable          Enable app on NC instance"
-	@echo "  make disable         Disable app on NC instance"
-	@echo "  make upgrade         Run NC upgrade (maintenance mode)"
-	@echo "  make migrate         Disable + enable app (DB migrations)"
-	@echo "  make logs            Tail NC log on remote"
-	@echo "  make test            Hint for PHPUnit"
-	@echo "  make clean           Remove built assets + node_modules"
+	@echo "  make setup     First-time: PHP + local Composer for release builds (see scripts/setup-build-env.sh)"
+	@echo "  make build     Build JS/CSS assets (production)"
+	@echo "  make dev       Build JS/CSS assets (development)"
+	@echo "  make watch     Watch + rebuild on change"
+	@echo "  make deploy        Build + rsync to $(NC_HOST):$(DEPLOY_PATH)"
+	@echo "  make deploy-fast   Rsync only (no npm build; use when js/ is already current)"
+	@echo "  make enable    Enable app on NC instance"
+	@echo "  make disable   Disable app on NC instance"
+	@echo "  make upgrade   Run full Nextcloud upgrade (occ upgrade)"
+	@echo "  make migrate   Disable + enable app (apply app DB migrations)"
+	@echo "  make logs      Tail NC log on remote"
+	@echo "  make test      Run PHP unit tests locally"
+	@echo "  make clean     Remove built assets"
+	@echo "  make release   Build JS + composer --no-dev, then $(RELEASE_TAR)"
+	@echo "  make release-clean  Remove dist/ and staging dir"
 	@echo ""
 
-# ─── Composer (production autoload only) ────────────────────────────────────
+setup:
+	@bash scripts/setup-build-env.sh
 
-composer-prod:
-	@command -v composer >/dev/null 2>&1 || { echo "composer not found; install Composer or run: composer install --no-dev"; exit 1; }
-	composer install --no-dev --optimize-autoloader --no-interaction
-
-# ─── JS Build ───────────────────────────────────────────────────────────────
+# ─── JS Build ─────────────────────────────────────────────────────────────────
 
 node_modules: package.json
 	npm ci
@@ -64,18 +68,18 @@ dev: node_modules
 watch: node_modules
 	npm run watch
 
-# ─── Deploy ─────────────────────────────────────────────────────────────────
+# ─── Deploy ───────────────────────────────────────────────────────────────────
 
-deploy: composer-prod build
+deploy: build
 	@echo "→ Deploying to $(NC_HOST):$(DEPLOY_PATH) ..."
 	ssh $(NC_HOST) 'mkdir -p $(DEPLOY_PATH)'
 	rsync -az --delete $(RSYNC_EXCLUDE) ./ $(NC_HOST):$(DEPLOY_PATH)/
 	ssh $(NC_HOST) 'chown -R nextcloud:www-data $(DEPLOY_PATH)'
 	@echo "→ Done. Run 'make enable' if this is the first deployment."
 
-# Quick deploy without composer/npm (use when only PHP/templates/lib changed, or JS already built)
+# Quick deploy without full rebuild (useful during development)
 deploy-fast:
-	@echo "→ Fast deploy (no composer/npm) to $(NC_HOST):$(DEPLOY_PATH) ..."
+	@echo "→ Fast deploy (no rebuild) to $(NC_HOST):$(DEPLOY_PATH) ..."
 	ssh $(NC_HOST) 'mkdir -p $(DEPLOY_PATH)'
 	rsync -az --delete $(RSYNC_EXCLUDE) ./ $(NC_HOST):$(DEPLOY_PATH)/
 	ssh $(NC_HOST) 'chown -R nextcloud:www-data $(DEPLOY_PATH)'
@@ -101,11 +105,42 @@ migrate:
 logs:
 	ssh $(NC_HOST) 'tail -f /var/lib/nextcloud/data/nextcloud.log | python3 -c "import sys,json; [print(json.dumps(json.loads(l), indent=2)) for l in sys.stdin]" 2>/dev/null || tail -f /var/lib/nextcloud/data/nextcloud.log'
 
-# ─── Test ────────────────────────────────────────────────────────────────────
+# ─── Test ─────────────────────────────────────────────────────────────────────
 
 test:
-	@echo "Note: PHP unit tests require 'composer install' first."
-	@echo "Run: composer install && ./vendor/bin/phpunit"
+	@if [ -x ./vendor/bin/phpunit ]; then ./vendor/bin/phpunit; \
+	else echo "Run: composer install  then  ./vendor/bin/phpunit" >&2; exit 1; fi
 
 clean:
 	rm -rf js/ css/ node_modules/
+
+# ─── Release tarball (manual copy to server apps/) ───────────────────────────
+
+composer-prod: composer.json
+	@if ! command -v composer >/dev/null 2>&1 && [ ! -f $(COMPOSER_PHAR) ]; then \
+		echo "No Composer found. Install php-cli, then run:  make setup" >&2; \
+		exit 1; \
+	fi
+	$(COMPOSER) install --no-dev --no-interaction --optimize-autoloader
+
+release: build composer-prod
+	@echo "→ Staging $(APP_ID)/ for tarball $(RELEASE_VER) ..."
+	@rm -rf "$(RELEASE_STAGING)" && mkdir -p "$(RELEASE_STAGING)/$(APP_ID)" "$(DIST_DIR)"
+	rsync -a appinfo/ "$(RELEASE_STAGING)/$(APP_ID)/appinfo/"
+	rsync -a lib/ "$(RELEASE_STAGING)/$(APP_ID)/lib/"
+	rsync -a templates/ "$(RELEASE_STAGING)/$(APP_ID)/templates/"
+	rsync -a img/ "$(RELEASE_STAGING)/$(APP_ID)/img/"
+	rsync -a js/ "$(RELEASE_STAGING)/$(APP_ID)/js/"
+	rsync -a vendor/ "$(RELEASE_STAGING)/$(APP_ID)/vendor/"
+	rsync -a composer.json "$(RELEASE_STAGING)/$(APP_ID)/"
+	@test -f composer.lock && rsync -a composer.lock "$(RELEASE_STAGING)/$(APP_ID)/" || true
+	@if [ -d screenshots ]; then rsync -a screenshots/ "$(RELEASE_STAGING)/$(APP_ID)/screenshots/"; fi
+	@if [ -f LICENSE ]; then rsync -a LICENSE "$(RELEASE_STAGING)/$(APP_ID)/"; fi
+	@if [ -f README.md ]; then rsync -a README.md "$(RELEASE_STAGING)/$(APP_ID)/"; fi
+	@if [ -f SECURITY.md ]; then rsync -a SECURITY.md "$(RELEASE_STAGING)/$(APP_ID)/"; fi
+	tar -czf "$(RELEASE_TAR)" -C "$(RELEASE_STAGING)" "$(APP_ID)"
+	@rm -rf "$(RELEASE_STAGING)"
+	@echo "→ $(RELEASE_TAR)  (extract inside nextcloud apps/ so you get apps/$(APP_ID)/)"
+
+release-clean:
+	rm -rf "$(DIST_DIR)" "$(RELEASE_STAGING)"

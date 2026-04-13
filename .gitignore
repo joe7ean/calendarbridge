@@ -2,6 +2,13 @@
 js/
 css/
 
+# Local release artifacts
+dist/
+.release-staging/
+
+# Local Composer (from scripts/setup-build-env.sh — not committed)
+.dev-tools/
+
 # Dependencies
 node_modules/
 vendor/
@@ -14,7 +21,7 @@ phpunit.result.cache
 *.log
 .cache/
 
-# Local deploy overrides (see Makefile.local.example)
+# Optional local Makefile overrides (not used by default Makefile; keep ignored if you add one)
 Makefile.local
 
 # IDE / editor

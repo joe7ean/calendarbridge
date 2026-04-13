@@ -207,29 +207,21 @@ calendarbridge/
 └── tests/
 ```
 
-### Test instances (solo maintainer)
+### Deploying to a test instance (rsync)
 
-Use **one machine** (your laptop or CI) for `composer` and `npm`; push a **ready-to-run tree** to each Nextcloud host. You do **not** need Node or a full Composer dev tree on the server—only PHP as part of Nextcloud.
+The root `Makefile` defaults to an SSH host and app directory (`NC_HOST`, `NC_APPS_DIR`). Override per invocation, for example:
 
-1. **Configure SSH + paths** once per environment:
-   - Copy `Makefile.local.example` to `Makefile.local` (gitignored).
-   - Set `NC_HOST` (e.g. `root@nc-test.lan`), `NC_APPS_DIR` (parent of the `calendarbridge` app folder on the server), and `OCC` (how to invoke `occ` on that host: correct `php` binary and path to `occ`).
+```bash
+make deploy NC_HOST=root@nc-test.lan NC_APPS_DIR=/var/lib/nextcloud/apps
+```
 
-2. **Deploy** (production autoload + built frontend + app code):
-   ```bash
-   make deploy
-   ```
-   This runs `composer install --no-dev` (minimal `vendor/` for PSR-4 autoload), `npm run build`, then `rsync`s to `$(NC_HOST):$(NC_APPS_DIR)/calendarbridge` (excluding `node_modules`, `.git`, tests, etc.).
+After the first push to a host, run `make enable`. Use **`make deploy-fast`** when you only changed PHP or templates and `js/` / `css/` are already built.
 
-3. **First time on that instance:** `make enable`, then configure the [service user](#setting-up-the-service-user) and feeds in the admin UI.
+### Release tarball (`make release`)
 
-4. **Another test host** without editing files: override variables for one shot, e.g.  
-   `make deploy NC_HOST=root@other.box NC_APPS_DIR=/var/www/nextcloud/apps`  
-   (set `OCC` in `Makefile.local` if the remote `php`/`occ` path differs from the default in the `Makefile`.)
+Builds the frontend and runs `composer install --no-dev`, then packs `appinfo/`, `lib/`, `templates/`, `img/`, `js/`, `vendor/`, and metadata into `dist/calendarbridge-<version>.tar.gz` (suitable for manual install under `apps/` or store submission).
 
-5. **Faster iteration** after a full deploy once: `make deploy-fast` skips Composer and npm (use when you only changed PHP/templates and already have `js/` and `vendor/` from a recent `make deploy`; rebuild with `make deploy` after Vue or dependency changes).
-
-**Private GitHub repo:** clone with SSH (`git@github.com:…`) or HTTPS with a personal access token; `make deploy` does not require the server to reach GitHub if you rsync from your checkout.
+If Composer is not installed globally, run **`make setup`** once; it downloads Composer into `.dev-tools/` (gitignored). Package hints for Ubuntu-based systems live in [`scripts/setup-build-env.sh`](scripts/setup-build-env.sh).
 
 ---
 
