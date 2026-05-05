@@ -66,6 +66,13 @@ In the admin panel under **Add feed**:
 - Enter the URL (`https://...` or `webcal://...`).
 - Set the name, color, and target groups.
 
+
+### Screenshot
+
+The Calendar Bridge Admin Panel UI:
+
+![Calendar Bridge Admin Panel](https://raw.githubusercontent.com/joe7ean/calendarbridge/main/screenshots/admin-panel.png)
+
 ## Development
 
 Requirements: Node.js 20+, PHP 8.1+, Composer.
