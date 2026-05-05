@@ -71,7 +71,7 @@ In the admin panel under **Add feed**:
 
 The Calendar Bridge Admin Panel UI:
 
-![Calendar Bridge Admin Panel](https://raw.githubusercontent.com/joe7ean/calendarbridge/main/screenshots/admin-panel.png)
+![Calendar Bridge Admin Panel](screenshots/admin-panel.png)
 
 ## Development
 
