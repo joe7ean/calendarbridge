@@ -2,6 +2,14 @@
 
 A Nextcloud app that allows administrators to subscribe to external iCal/WebCal feeds and mirror them internally as **relay calendars**. These calendars are automatically shared **read-only** with Nextcloud groups, eliminating the need for individual users to subscribe to the feeds themselves.
 
+## Project Status
+
+Calendar Bridge is currently under active development and can be tested as an **alpha** release.
+It is **not yet available** in the official Nextcloud App Store.
+Publishing to the official Nextcloud App Store is the target.
+
+Contributions, optimizations, and feedback are highly welcome!
+
 ## Features
 
 - **Centralized Management:** Subscribe to external iCal/WebCal feeds once and mirror them internally.
