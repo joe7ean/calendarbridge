@@ -35,3 +35,5 @@ Makefile.local
 *.pem
 *.crt
 *.key
+featurelog
+buglog
