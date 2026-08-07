@@ -7,20 +7,24 @@ namespace OCA\CalendarBridge\Service;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
-use OCP\IUserManager;
+use OCP\IGroupManager;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Reader;
 
 class CalendarService {
-    // NC DAV sharing access level constants (oc_dav_shares.access)
+    // NC DAV sharing access levels (oc_dav_shares.access), see OCA\DAV\DAV\Sharing\Backend
     private const ACCESS_READ_ONLY = 3;
+    private const ACCESS_UNSHARED = 5;
+
+    private const GROUP_PRINCIPAL_PREFIX = 'principals/groups/';
+    private const USER_PRINCIPAL_PREFIX = 'principals/users/';
 
     public function __construct(
         private readonly CalDavBackend $calDavBackend,
         private readonly IDBConnection $db,
-        private readonly IUserManager $userManager,
+        private readonly IGroupManager $groupManager,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -67,8 +71,8 @@ class CalendarService {
      * Delete a relay calendar and all its objects.
      */
     public function deleteCalendar(int $calendarId): void {
-        // Also remove all shares first
-        $this->shareWithGroups($calendarId, []);
+        // Drop shares first so a failed delete cannot leave the calendar shared.
+        $this->removeAllShares($calendarId);
         try {
             $this->calDavBackend->deleteCalendar($calendarId, true);
         } catch (\Exception $e) {
@@ -185,10 +189,12 @@ class CalendarService {
 
     /**
      * Share the relay calendar read-only with the specified groups.
-     * Replaces the full group-share list on every call to stay in sync.
      *
-     * Uses direct DB access because CalDavBackend::updateShares() in NC 32
-     * requires an IShareable object that is not easily constructable externally.
+     * Uses direct DB access because CalDavBackend::updateShares() requires an
+     * IShareable object that is not easily constructable externally. The column
+     * set written here mirrors OCA\DAV\DAV\Sharing\SharingMapper::share().
+     *
+     * This runs on every sync, so only actual differences are written.
      *
      * The serviceUser is NOT added as a read-only sharer here — they remain
      * the calendar owner and can manage it via CalDAV. Group members who want
@@ -199,29 +205,126 @@ class CalendarService {
      */
     public function shareWithGroups(int $calendarId, array $groupIds): void {
         try {
-            $qb = $this->db->getQueryBuilder();
+            $desired = array_values(array_unique(array_filter(
+                array_map('strval', $groupIds),
+                static fn (string $gid): bool => $gid !== '',
+            )));
+            $current = $this->getSharedGroupIds($calendarId);
 
-            // Remove all existing group shares for this calendar
-            $qb->delete('dav_shares')
-                ->where($qb->expr()->eq('resourceid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
-                ->andWhere($qb->expr()->eq('type', $qb->createNamedParameter('calendar')))
-                ->andWhere($qb->expr()->like('principaluri', $qb->createNamedParameter('principals/groups/%')));
-            $qb->executeStatement();
+            $toAdd    = array_values(array_diff($desired, $current));
+            $toRemove = array_values(array_diff($current, $desired));
 
-            // Insert new group shares (read-only)
-            foreach ($groupIds as $gid) {
-                $this->upsertShare($calendarId, 'principals/groups/' . $gid);
+            if ($toAdd === [] && $toRemove === []) {
+                return;
+            }
+
+            foreach ($toRemove as $gid) {
+                $this->deleteShare($calendarId, self::GROUP_PRINCIPAL_PREFIX . $gid);
+            }
+
+            foreach ($toAdd as $gid) {
+                $this->upsertShare($calendarId, self::GROUP_PRINCIPAL_PREFIX . $gid);
+                // "Remove from my calendars" leaves an ACCESS_UNSHARED row behind which
+                // would keep the calendar hidden even after re-sharing. Clear it only for
+                // members of a group that is being (re-)added — doing it unconditionally
+                // would undo the user's own choice on every sync.
+                $this->clearUnsharesForGroup($calendarId, $gid);
             }
 
             $this->logger->info('CalendarBridge: calendar sharing updated', [
                 'calendarId' => $calendarId,
-                'groups'     => $groupIds,
+                'added'      => $toAdd,
+                'removed'    => $toRemove,
             ]);
         } catch (\Exception $e) {
             $this->logger->error('CalendarBridge: failed to update calendar shares', [
                 'calendarId' => $calendarId,
                 'error'      => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Drop every share row for a calendar, including the per-user ACCESS_UNSHARED
+     * markers, so nothing survives to affect a later calendar with the same id.
+     */
+    public function removeAllShares(int $calendarId): void {
+        try {
+            $qb = $this->db->getQueryBuilder();
+            $qb->delete('dav_shares')
+                ->where($qb->expr()->eq('resourceid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
+                ->andWhere($qb->expr()->eq('type', $qb->createNamedParameter('calendar')));
+            $qb->executeStatement();
+        } catch (\Exception $e) {
+            $this->logger->error('CalendarBridge: failed to remove calendar shares', [
+                'calendarId' => $calendarId,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Group IDs this calendar is currently shared with, ignoring unshare markers.
+     *
+     * @return string[]
+     */
+    private function getSharedGroupIds(int $calendarId): array {
+        $qb = $this->db->getQueryBuilder();
+        $qb->select('principaluri')
+            ->from('dav_shares')
+            ->where($qb->expr()->eq('resourceid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
+            ->andWhere($qb->expr()->eq('type', $qb->createNamedParameter('calendar')))
+            ->andWhere($qb->expr()->neq('access', $qb->createNamedParameter(self::ACCESS_UNSHARED, IQueryBuilder::PARAM_INT)))
+            ->andWhere($qb->expr()->like('principaluri', $qb->createNamedParameter(self::GROUP_PRINCIPAL_PREFIX . '%')));
+
+        $result   = $qb->executeQuery();
+        $groupIds = [];
+        while ($row = $result->fetch()) {
+            $gid = substr((string)$row['principaluri'], strlen(self::GROUP_PRINCIPAL_PREFIX));
+            if ($gid !== '') {
+                $groupIds[] = $gid;
+            }
+        }
+        $result->closeCursor();
+
+        return array_values(array_unique($groupIds));
+    }
+
+    private function deleteShare(int $calendarId, string $principalUri): void {
+        $qb = $this->db->getQueryBuilder();
+        $qb->delete('dav_shares')
+            ->where($qb->expr()->eq('resourceid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
+            ->andWhere($qb->expr()->eq('type', $qb->createNamedParameter('calendar')))
+            ->andWhere($qb->expr()->eq('principaluri', $qb->createNamedParameter($principalUri)));
+        $qb->executeStatement();
+    }
+
+    /**
+     * Remove the ACCESS_UNSHARED markers of a group's members for this calendar.
+     */
+    private function clearUnsharesForGroup(int $calendarId, string $groupId): void {
+        $group = $this->groupManager->get($groupId);
+        if ($group === null) {
+            return;
+        }
+
+        $principals = [];
+        foreach ($group->getUsers() as $user) {
+            $principals[] = self::USER_PRINCIPAL_PREFIX . $user->getUID();
+        }
+        if ($principals === []) {
+            return;
+        }
+
+        // Chunked to stay clear of database placeholder limits on large groups.
+        foreach (array_chunk($principals, 500) as $chunk) {
+            $qb = $this->db->getQueryBuilder();
+            $qb->delete('dav_shares')
+                ->where($qb->expr()->eq('resourceid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
+                ->andWhere($qb->expr()->eq('type', $qb->createNamedParameter('calendar')))
+                ->andWhere($qb->expr()->eq('access', $qb->createNamedParameter(self::ACCESS_UNSHARED, IQueryBuilder::PARAM_INT)))
+                ->andWhere($qb->expr()->in('principaluri', $qb->createNamedParameter($chunk, IQueryBuilder::PARAM_STR_ARRAY)));
+            $qb->executeStatement();
         }
     }
 

@@ -7,7 +7,7 @@ namespace OCA\CalendarBridge\Tests\Unit\Service;
 use OCA\CalendarBridge\Service\CalendarService;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCP\IDBConnection;
-use OCP\IUserManager;
+use OCP\IGroupManager;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -19,7 +19,7 @@ class CalendarServiceTest extends TestCase {
         return new CalendarService(
             $calDav,
             $this->createMock(IDBConnection::class),
-            $this->createMock(IUserManager::class),
+            $this->createMock(IGroupManager::class),
             $this->createMock(LoggerInterface::class),
         );
     }
