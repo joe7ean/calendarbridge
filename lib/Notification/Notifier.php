@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\Notification;
 
 use OCA\CalendarBridge\AppInfo\Application;
+use OCP\IURLGenerator;
 use OCP\L10N\IFactory;
 use OCP\Notification\INotification;
 use OCP\Notification\INotifier;
@@ -12,6 +13,7 @@ use OCP\Notification\INotifier;
 class Notifier implements INotifier {
     public function __construct(
         private readonly IFactory $l10nFactory,
+        private readonly IURLGenerator $urlGenerator,
     ) {
     }
 
@@ -44,7 +46,7 @@ class Notifier implements INotifier {
             $notification
                 ->setParsedSubject($subject)
                 ->setParsedMessage($message)
-                ->setLink(\OC::$server->getURLGenerator()->linkToRouteAbsolute(Application::APP_ID . '.page.index'));
+                ->setLink($this->urlGenerator->linkToRouteAbsolute(Application::APP_ID . '.page.index'));
         }
 
         return $notification;

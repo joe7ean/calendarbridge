@@ -10,6 +10,7 @@ use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
+use OCP\Server;
 
 class Application extends App implements IBootstrap {
     public const APP_ID = 'calendarbridge';
@@ -23,9 +24,10 @@ class Application extends App implements IBootstrap {
         $context->registerNotifierService(Notifier::class);
 
         // CalDavBackend is an internal NC class — wire it explicitly
-        // so it's available for injection in our services.
+        // so it's available for injection in our services. Resolved from the
+        // server container, not the app container, which would recurse here.
         $context->registerService(CalDavBackend::class, function () {
-            return \OC::$server->get(CalDavBackend::class);
+            return Server::get(CalDavBackend::class);
         });
     }
 
