@@ -4,7 +4,9 @@ A Nextcloud app that allows administrators to subscribe to external iCal/WebCal 
 
 ## Project Status
 
-Calendar Bridge is currently under active development and can be tested as an **alpha** release.
+Calendar Bridge is functionally complete and under active maintenance. The `0.x`
+version number reflects limited exposure to different setups so far, not an
+unfinished feature set.
 It is **not yet available** in the official Nextcloud App Store.
 Publishing to the official Nextcloud App Store is the target.
 
