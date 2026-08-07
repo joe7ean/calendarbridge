@@ -2,7 +2,7 @@ NC_HOST     ?= root@10.0.0.100
 NC_APPS_DIR ?= /var/lib/nextcloud/apps
 APP_ID      ?= calendarbridge
 DEPLOY_PATH  = $(NC_APPS_DIR)/$(APP_ID)
-OCC          = ssh $(NC_HOST) 'php83 /usr/share/webapps/nextcloud/occ'
+OCC          = ssh $(NC_HOST) 'php -d memory_limit=512M /usr/share/webapps/nextcloud/occ'
 
 # Packaged app tarball (see `make release`)
 DIST_DIR         ?= dist
