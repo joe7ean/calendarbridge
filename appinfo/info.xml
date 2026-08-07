@@ -22,7 +22,7 @@ Features:
 - Admin notifications on persistent fetch failures
 - Manual sync and connection test from the admin UI
     ]]></description>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <licence>agpl</licence>
     <author mail="joe7ean@users.noreply.github.com" homepage="https://github.com/joe7ean">joe7ean</author>
     <namespace>CalendarBridge</namespace>
