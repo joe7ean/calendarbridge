@@ -26,8 +26,13 @@ Features:
     <licence>agpl</licence>
     <author mail="joe7ean@users.noreply.github.com" homepage="https://github.com/joe7ean">joe7ean</author>
     <namespace>CalendarBridge</namespace>
+    <documentation>
+        <admin>https://github.com/joe7ean/calendarbridge#readme</admin>
+    </documentation>
     <category>organization</category>
+    <website>https://github.com/joe7ean/calendarbridge</website>
     <bugs>https://github.com/joe7ean/calendarbridge/issues</bugs>
+    <repository type="git">https://github.com/joe7ean/calendarbridge.git</repository>
     <screenshot>https://raw.githubusercontent.com/joe7ean/calendarbridge/main/screenshots/admin-panel.png</screenshot>
     <dependencies>
         <php min-version="8.2"/>
