@@ -327,7 +327,8 @@ class CalendarService {
         $m = $e->getMessage();
         return str_contains($m, 'Duplicate')
             || str_contains($m, '1062')
-            || str_contains($m, 'UNIQUE');
+            || str_contains($m, 'UNIQUE')
+            || str_contains($m, 'already exists');
     }
 
     /**
