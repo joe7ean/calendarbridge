@@ -25,8 +25,8 @@ if ! command -v php >/dev/null 2>&1; then
 	exit 1
 fi
 
-if ! php -r 'exit(version_compare(PHP_VERSION, "8.1.0", "<") ? 1 : 0);'; then
-	echo "Need PHP >= 8.1 (found: $(php -r 'echo PHP_VERSION;'))." >&2
+if ! php -r 'exit(version_compare(PHP_VERSION, "8.2.0", "<") ? 1 : 0);'; then
+	echo "Need PHP >= 8.2 (found: $(php -r 'echo PHP_VERSION;'))." >&2
 	exit 1
 fi
 

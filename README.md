@@ -21,8 +21,8 @@ Contributions, optimizations, and feedback are highly welcome!
 
 ## Requirements
 
-- Nextcloud 30 – 32
-- PHP 8.1+
+- Nextcloud 30 – 34
+- PHP 8.2+ (8.5 recommended on Nextcloud 34)
 - Reliable Nextcloud cron (systemd timer or crontab recommended)
 - DAV app enabled
 
@@ -83,7 +83,7 @@ The Calendar Bridge Admin Panel UI:
 
 ## Development
 
-Requirements: Node.js 20+, PHP 8.1+, Composer.
+Requirements: Node.js 20+, PHP 8.2+, Composer.
 
 ```bash
 git clone https://github.com/joe7ean/calendarbridge.git
