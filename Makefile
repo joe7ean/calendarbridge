@@ -47,7 +47,7 @@ help:
 	@echo "  make logs      Tail NC log on remote"
 	@echo "  make test      Run PHP unit tests locally"
 	@echo "  make clean     Remove built assets"
-	@echo "  make release   Build JS + composer --no-dev, then $(RELEASE_TAR)"
+	@echo "  make release   Build JS, then $(RELEASE_TAR)"
 	@echo "  make release-clean  Remove dist/ and staging dir"
 	@echo ""
 
@@ -123,7 +123,10 @@ composer-prod: composer.json
 	fi
 	$(COMPOSER) install --no-dev --no-interaction --optimize-autoloader
 
-release: build composer-prod
+# vendor/ is deliberately not shipped: the app has no runtime PHP dependencies and
+# Nextcloud maps OCA\CalendarBridge\ to lib/ itself. Shipping it would also risk
+# leaking the dev-only OCP stubs into a production instance.
+release: build
 	@echo "→ Staging $(APP_ID)/ for tarball $(RELEASE_VER) ..."
 	@rm -rf "$(RELEASE_STAGING)" && mkdir -p "$(RELEASE_STAGING)/$(APP_ID)" "$(DIST_DIR)"
 	rsync -a appinfo/ "$(RELEASE_STAGING)/$(APP_ID)/appinfo/"
@@ -131,7 +134,6 @@ release: build composer-prod
 	rsync -a templates/ "$(RELEASE_STAGING)/$(APP_ID)/templates/"
 	rsync -a img/ "$(RELEASE_STAGING)/$(APP_ID)/img/"
 	rsync -a js/ "$(RELEASE_STAGING)/$(APP_ID)/js/"
-	rsync -a vendor/ "$(RELEASE_STAGING)/$(APP_ID)/vendor/"
 	rsync -a composer.json "$(RELEASE_STAGING)/$(APP_ID)/"
 	@test -f composer.lock && rsync -a composer.lock "$(RELEASE_STAGING)/$(APP_ID)/" || true
 	@if [ -d screenshots ]; then rsync -a screenshots/ "$(RELEASE_STAGING)/$(APP_ID)/screenshots/"; fi

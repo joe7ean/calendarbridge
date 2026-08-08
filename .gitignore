@@ -6,6 +6,9 @@ css/
 dist/
 .release-staging/
 
+# Personal deployment notes (not part of the published app)
+YUNOHOST.md
+
 # Local Composer (from scripts/setup-build-env.sh — not committed)
 .dev-tools/
 

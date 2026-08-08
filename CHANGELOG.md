@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `make release` no longer invokes Composer and no longer ships `vendor/`. The app has
+  no runtime PHP dependencies, and bundling the dev-only OCP stubs into a release
+  tarball was a hazard rather than a convenience.
+
+### Fixed
+
+- Manual installation instructions. `git clone` alone leaves the admin panel empty
+  because `js/` is a build artifact, and `composer install` was never needed at
+  runtime. Documented how to update the app and why it has to be disabled before a
+  Nextcloud major upgrade while it is not in the App Store.
+
 ## [0.2.0] - 2026-08-07
 
 First versioned release. 0.1.0 was never tagged or published, so this entry
