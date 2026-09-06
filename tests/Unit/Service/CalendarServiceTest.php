@@ -120,6 +120,69 @@ ICS
         self::assertSame(0, $stats['deleted']);
     }
 
+    public function testSyncDeletesObjectMissingFromFeed(): void {
+        $calendarId = 7;
+        $uid = 'removed@example';
+        $uri = $uid . '.ics';
+        $storedIcs = <<<ICS
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:$uid
+DTSTART:20200101T120000Z
+END:VEVENT
+END:VCALENDAR
+ICS;
+
+        $calDav = $this->createMock(CalDavBackend::class);
+        $calDav->expects(self::once())
+            ->method('getCalendarObjects')
+            ->with($calendarId)
+            ->willReturn([['uri' => $uri, 'calendardata' => $storedIcs]]);
+        $calDav->expects(self::once())
+            ->method('deleteCalendarObject')
+            ->with($calendarId, $uri);
+
+        $service = $this->serviceWithCalDavMock($calDav);
+        $stats = $service->syncEvents($calendarId, Reader::read(<<<ICS
+BEGIN:VCALENDAR
+VERSION:2.0
+END:VCALENDAR
+ICS
+        ));
+
+        self::assertSame(1, $stats['deleted']);
+    }
+
+    public function testPastEventStillPresentInFeedIsNotDeleted(): void {
+        $calendarId = 8;
+        $uid = 'past@example';
+        $uri = $uid . '.ics';
+        $ics = <<<ICS
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:$uid
+DTSTART:20200101T120000Z
+END:VEVENT
+END:VCALENDAR
+ICS;
+
+        $calDav = $this->createMock(CalDavBackend::class);
+        $calDav->expects(self::once())
+            ->method('getCalendarObjects')
+            ->with($calendarId)
+            ->willReturn([['uri' => $uri, 'calendardata' => $ics]]);
+        $calDav->expects(self::never())->method('deleteCalendarObject');
+        $calDav->expects(self::never())->method('updateCalendarObject');
+
+        $service = $this->serviceWithCalDavMock($calDav);
+        $stats = $service->syncEvents($calendarId, Reader::read($ics));
+
+        self::assertSame(0, $stats['deleted']);
+        self::assertSame(0, $stats['updated']);
+    }
+
     public function testSyncSecondVeventWithSameUidUpdatesInsteadOfSecondCreate(): void {
         $calendarId = 1;
         $uid = 'dup@example';

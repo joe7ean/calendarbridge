@@ -93,6 +93,12 @@ class SyncService {
 
             $calendar = $this->feedService->sanitize($result['calendar'], $feed->isStripAttendees());
 
+            // A valid but empty calendar is suspicious: treating it as the
+            // source of truth would delete every locally mirrored event.
+            if (count($calendar->VEVENT ?? []) === 0) {
+                throw new FeedFetchException('Feed contains no events; sync skipped to protect the relay calendar.');
+            }
+
             // Sync events
             $stats = $this->calendarService->syncEvents($calendarId, $calendar);
 
