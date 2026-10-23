@@ -10,6 +10,8 @@ use OCA\CalendarBridge\Db\FeedMapper;
 use OCA\CalendarBridge\Notification\NotificationService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\IAppConfig;
+use OCP\Lock\ILockingProvider;
+use OCP\Lock\LockedException;
 use OCP\Security\ICrypto;
 use Psr\Log\LoggerInterface;
 
@@ -26,16 +28,38 @@ class SyncService {
         private readonly NotificationService $notificationService,
         private readonly IAppConfig $appConfig,
         private readonly ICrypto $crypto,
+        private readonly ILockingProvider $lockingProvider,
         private readonly LoggerInterface $logger,
     ) {
     }
 
     /**
      * Sync a single feed by ID. Called by SyncJob and manual-sync endpoint.
+     * Runs at most once per feed at a time; a concurrent call returns
+     * immediately with skipped = locked = true.
      *
-     * @return array{added: int, updated: int, deleted: int, durationMs: int, skipped: bool}
+     * @return array{added: int, updated: int, deleted: int, durationMs: int, skipped: bool, locked?: bool}
      */
     public function syncFeed(int $feedId): array {
+        $lockKey = 'calendarbridge/feed/' . $feedId;
+        try {
+            $this->lockingProvider->acquireLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
+        } catch (LockedException) {
+            $this->logger->info('CalendarBridge: feed is already being synced', ['feedId' => $feedId]);
+            return ['added' => 0, 'updated' => 0, 'deleted' => 0, 'durationMs' => 0, 'skipped' => true, 'locked' => true];
+        }
+
+        try {
+            return $this->syncFeedUnlocked($feedId);
+        } finally {
+            $this->lockingProvider->releaseLock($lockKey, ILockingProvider::LOCK_EXCLUSIVE);
+        }
+    }
+
+    /**
+     * @return array{added: int, updated: int, deleted: int, durationMs: int, skipped: bool}
+     */
+    private function syncFeedUnlocked(int $feedId): array {
         $startTime = (int)(microtime(true) * 1000);
 
         try {
@@ -49,19 +73,17 @@ class SyncService {
             return ['added' => 0, 'updated' => 0, 'deleted' => 0, 'durationMs' => 0, 'skipped' => true];
         }
 
-        $authPass = null;
-        if ($feed->getHttpAuthPass() !== null) {
-            try {
-                $authPass = $this->crypto->decrypt($feed->getHttpAuthPass());
-            } catch (\Exception $e) {
-                $this->logger->error('CalendarBridge: failed to decrypt auth password', [
-                    'feedId' => $feedId,
-                    'error'  => $e->getMessage(),
-                ]);
-            }
-        }
-
         try {
+            $authPass = null;
+            if ($feed->getHttpAuthPass() !== null) {
+                try {
+                    $authPass = $this->crypto->decrypt($feed->getHttpAuthPass());
+                } catch (\Exception $e) {
+                    // Fetching without the password would only produce a misleading 401.
+                    throw new FeedFetchException('Stored HTTP password could not be decrypted; please enter it again.', 0, $e);
+                }
+            }
+
             $result = $this->feedService->fetch(
                 $feed->getFeedUrl(),
                 $feed->getLastEtag(),
