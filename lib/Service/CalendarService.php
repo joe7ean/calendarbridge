@@ -11,6 +11,7 @@ use OCP\IGroupManager;
 use Psr\Log\LoggerInterface;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
+use Sabre\VObject\Property;
 use Sabre\VObject\Reader;
 
 class CalendarService {
@@ -90,6 +91,9 @@ class CalendarService {
     /**
      * Sync VEVENTs from an external feed into the relay calendar.
      *
+     * All VEVENTs sharing a UID (a recurring master plus its RECURRENCE-ID
+     * overrides) form one calendar object, as CalDAV requires.
+     *
      * @return array{added: int, updated: int, deleted: int}
      */
     public function syncEvents(int $calendarId, VCalendar $calendar): array {
@@ -97,85 +101,68 @@ class CalendarService {
         $updated = 0;
         $deleted = 0;
 
-        // Index existing objects by UID (NC bulk list often omits calendardata — hydrate per row).
-        $existing = [];
-        foreach ($this->calDavBackend->getCalendarObjects($calendarId) as $obj) {
-            $full = $this->hydrateCalendarObject($calendarId, $obj);
-            if ($full === null) {
-                continue;
-            }
-            $uid = $this->resolveObjectUid($full);
-            if ($uid !== null && $uid !== '') {
-                $existing[$uid] = $full;
-            }
-        }
+        $this->purgeTrashedObjects($calendarId);
+        $existing = $this->loadExistingObjects($calendarId);
 
-        // Process incoming VEVENTs
         $seen = [];
-        foreach ($calendar->VEVENT ?? [] as $event) {
-            $uid = (string)($event->UID ?? '');
-            if ($uid === '') {
+        foreach ($this->groupEventsByUid($calendar) as $uid => $events) {
+            $seen[$uid] = true;
+            $icsData = $this->wrapEvents($calendar, $events);
+
+            if (isset($existing[$uid])) {
+                if ($this->hasChanged($existing[$uid]['calendardata'] ?? '', $icsData)) {
+                    $this->calDavBackend->updateCalendarObject($calendarId, $existing[$uid]['uri'], $icsData);
+                    $updated++;
+                }
                 continue;
             }
-            $seen[$uid] = true;
 
-            // Wrap single VEVENT in a minimal VCALENDAR for storage
-            $icsData = $this->wrapEvent($calendar, $event);
-
-            if (!isset($existing[$uid])) {
-                $uri = $uid . '.ics';
-                try {
-                    $this->calDavBackend->createCalendarObject($calendarId, $uri, $icsData);
-                    $added++;
-                    $existing[$uid] = ['uri' => $uri, 'calendardata' => $icsData];
-                } catch (\Exception $e) {
-                    if (!$this->isLikelyDuplicateCalendarObjectException($e)) {
-                        $this->logger->warning('CalendarBridge: could not create calendar object', [
-                            'calendarId' => $calendarId,
-                            'uid'        => $uid,
-                            'error'      => $e->getMessage(),
-                        ]);
-                        continue;
-                    }
-                    // Object already exists (same URI, different URI from older sync, or concurrent insert).
-                    $found = $this->calDavBackend->getCalendarObject($calendarId, $uri)
-                        ?? $this->findObjectByUid($calendarId, $uid);
-                    if ($found !== null) {
-                        $this->logger->info('CalendarBridge: resolved duplicate calendar object on sync', [
-                            'calendarId' => $calendarId,
-                            'uid'        => $uid,
-                            'uri'        => $found['uri'] ?? $uri,
-                        ]);
-                        if ($this->hasChanged($found['calendardata'] ?? '', $icsData)) {
-                            $this->calDavBackend->updateCalendarObject($calendarId, $found['uri'], $icsData);
-                            $updated++;
-                        }
-                        $existing[$uid] = $found;
-                    } else {
-                        $this->logger->warning('CalendarBridge: could not create or locate object', [
-                            'calendarId' => $calendarId,
-                            'uid'        => $uid,
-                            'error'      => $e->getMessage(),
-                        ]);
-                    }
+            $uri = $this->objectUri($uid);
+            try {
+                $this->calDavBackend->createCalendarObject($calendarId, $uri, $icsData);
+                $added++;
+            } catch (\Exception $e) {
+                if (!$this->isLikelyDuplicateCalendarObjectException($e)) {
+                    $this->logger->warning('CalendarBridge: could not create calendar object', [
+                        'calendarId' => $calendarId,
+                        'uid'        => $uid,
+                        'error'      => $e->getMessage(),
+                    ]);
+                    continue;
                 }
-            } else {
-                // Only update if LAST-MODIFIED or SEQUENCE changed
-                if ($this->hasChanged($existing[$uid]['calendardata'] ?? '', $icsData)) {
-                    $this->calDavBackend->updateCalendarObject(
-                        $calendarId,
-                        $existing[$uid]['uri'],
-                        $icsData
-                    );
+                // Object already exists (same URI, different URI from older sync, or concurrent insert).
+                $found = $this->calDavBackend->getCalendarObject($calendarId, $uri)
+                    ?? $this->findObjectByUid($calendarId, $uid);
+                if ($found === null) {
+                    $this->logger->warning('CalendarBridge: could not create or locate object', [
+                        'calendarId' => $calendarId,
+                        'uid'        => $uid,
+                        'error'      => $e->getMessage(),
+                    ]);
+                    continue;
+                }
+                $this->logger->info('CalendarBridge: resolved duplicate calendar object on sync', [
+                    'calendarId' => $calendarId,
+                    'uid'        => $uid,
+                    'uri'        => $found['uri'] ?? $uri,
+                ]);
+                if ($this->hasChanged($found['calendardata'] ?? '', $icsData)) {
+                    $this->calDavBackend->updateCalendarObject($calendarId, $found['uri'], $icsData);
                     $updated++;
                 }
             }
         }
 
-        // Delete objects no longer present in the feed
+        // Delete objects no longer present in the feed. Permanently: a trashed
+        // object would block re-creating the same UID later (ADR 0009).
         foreach ($existing as $uid => $obj) {
             if (!isset($seen[$uid])) {
-                $this->calDavBackend->deleteCalendarObject($calendarId, $obj['uri']);
+                $this->calDavBackend->deleteCalendarObject(
+                    $calendarId,
+                    $obj['uri'],
+                    CalDavBackend::CALENDAR_TYPE_CALENDAR,
+                    true,
+                );
                 $deleted++;
             }
         }
@@ -357,26 +344,150 @@ class CalendarService {
     }
 
     /**
-     * Wrap a VEVENT in a minimal VCALENDAR, preserving VTIMEZONE if present.
+     * Calendar object URI for a new object. UIDs are opaque strings and may
+     * contain characters that are unsafe in a URI, so those are hashed.
      */
-    private function wrapEvent(VCalendar $source, VEvent $event): string {
-        $cal  = new VCalendar();
+    private function objectUri(string $uid): string {
+        if (preg_match('/^[A-Za-z0-9._@-]{1,200}$/', $uid) === 1) {
+            return $uid . '.ics';
+        }
+        return sha1($uid) . '.ics';
+    }
+
+    /**
+     * Group the feed's VEVENTs by UID, master (no RECURRENCE-ID) first and
+     * overrides in RECURRENCE-ID order, so the serialisation is stable.
+     *
+     * @return array<string, VEvent[]>
+     */
+    private function groupEventsByUid(VCalendar $calendar): array {
+        $groups = [];
+        foreach ($calendar->VEVENT ?? [] as $event) {
+            $uid = trim((string)($event->UID ?? ''));
+            if ($uid === '') {
+                continue;
+            }
+            $groups[$uid][] = $event;
+        }
+
+        foreach ($groups as &$events) {
+            usort($events, static function (VEvent $a, VEvent $b): int {
+                $ra = isset($a->{'RECURRENCE-ID'}) ? (string)$a->{'RECURRENCE-ID'} : '';
+                $rb = isset($b->{'RECURRENCE-ID'}) ? (string)$b->{'RECURRENCE-ID'} : '';
+                return strcmp($ra, $rb);
+            });
+        }
+        unset($events);
+
+        return $groups;
+    }
+
+    /**
+     * Wrap the VEVENTs of one UID in a minimal VCALENDAR, together with every
+     * VTIMEZONE referenced by any of their properties (DTSTART, DTEND, DUE,
+     * RECURRENCE-ID, EXDATE, RDATE, …).
+     *
+     * @param VEvent[] $events
+     */
+    private function wrapEvents(VCalendar $source, array $events): string {
+        $cal = new VCalendar();
         $cal->PRODID = '-//CalendarBridge//CalendarBridge//EN';
         $cal->VERSION = '2.0';
 
-        // Include VTIMEZONE referenced by the event
-        $tzId = (string)($event->DTSTART['TZID'] ?? '');
-        if ($tzId !== '' && isset($source->VTIMEZONE)) {
-            foreach ($source->VTIMEZONE as $tz) {
-                if ((string)$tz->TZID === $tzId) {
-                    $cal->add($tz);
-                    break;
+        $tzIds = [];
+        foreach ($events as $event) {
+            foreach ($event->children() as $child) {
+                if ($child instanceof Property && isset($child['TZID'])) {
+                    $tzIds[(string)$child['TZID']] = true;
                 }
             }
         }
 
-        $cal->add($event);
+        if ($tzIds !== [] && isset($source->VTIMEZONE)) {
+            foreach ($source->VTIMEZONE as $tz) {
+                if (isset($tzIds[(string)$tz->TZID])) {
+                    $cal->add(clone $tz);
+                }
+            }
+        }
+
+        foreach ($events as $event) {
+            $cal->add(clone $event);
+        }
+
         return $cal->serialize();
+    }
+
+    /**
+     * Existing objects of the relay calendar indexed by UID. Two queries in
+     * total: the object list, then the data of all objects in one batch.
+     *
+     * @return array<string, array{uri: string, calendardata: string}>
+     */
+    private function loadExistingObjects(int $calendarId): array {
+        $uris = array_map(
+            static fn (array $row): string => (string)$row['uri'],
+            $this->calDavBackend->getCalendarObjects($calendarId),
+        );
+        if ($uris === []) {
+            return [];
+        }
+
+        $byUri = [];
+        foreach ($this->calDavBackend->getMultipleCalendarObjects($calendarId, $uris) as $obj) {
+            $byUri[(string)$obj['uri']] = $obj;
+        }
+
+        $existing = [];
+        foreach ($uris as $uri) {
+            $obj = $byUri[$uri] ?? $this->calDavBackend->getCalendarObject($calendarId, $uri);
+            if ($obj === null) {
+                continue;
+            }
+            $uid = $this->resolveObjectUid($obj);
+            if ($uid !== null && $uid !== '') {
+                $existing[$uid] = ['uri' => $uri, 'calendardata' => (string)($obj['calendardata'] ?? '')];
+            }
+        }
+
+        return $existing;
+    }
+
+    /**
+     * Permanently remove objects that earlier versions moved to the trash bin.
+     * On NC 30 – early 33 a trashed object blocks re-creating its UID, and a
+     * second soft delete of the same URI fails (ADR 0009).
+     */
+    private function purgeTrashedObjects(int $calendarId): void {
+        try {
+            $qb = $this->db->getQueryBuilder();
+            $qb->select('uri')
+                ->from('calendarobjects')
+                ->where($qb->expr()->eq('calendarid', $qb->createNamedParameter($calendarId, IQueryBuilder::PARAM_INT)))
+                ->andWhere($qb->expr()->eq('calendartype', $qb->createNamedParameter(CalDavBackend::CALENDAR_TYPE_CALENDAR, IQueryBuilder::PARAM_INT)))
+                ->andWhere($qb->expr()->isNotNull('deleted_at'));
+            $result = $qb->executeQuery();
+            $uris = [];
+            while ($row = $result->fetch()) {
+                $uris[] = (string)$row['uri'];
+            }
+            $result->closeCursor();
+
+            foreach ($uris as $uri) {
+                $this->calDavBackend->deleteCalendarObject($calendarId, $uri, CalDavBackend::CALENDAR_TYPE_CALENDAR, true);
+            }
+            if ($uris !== []) {
+                $this->logger->info('CalendarBridge: purged trashed relay objects', [
+                    'calendarId' => $calendarId,
+                    'count'      => count($uris),
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->warning('CalendarBridge: could not purge trashed relay objects', [
+                'calendarId' => $calendarId,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -416,17 +527,11 @@ class CalendarService {
         return $fromRow !== '' ? $fromRow : null;
     }
 
-    /**
-     * Bulk rows from getCalendarObjects often omit calendardata; load full row for UID / diff.
-     */
-    private function hydrateCalendarObject(int $calendarId, array $obj): ?array {
-        if (($obj['calendardata'] ?? '') !== '') {
-            return $obj;
-        }
-        return $this->calDavBackend->getCalendarObject($calendarId, $obj['uri']);
-    }
-
     private function isLikelyDuplicateCalendarObjectException(\Throwable $e): bool {
+        // NC >= 33.0.x throws OCA\DAV\CalDAV\UidConflict for an existing UID.
+        if (str_ends_with($e::class, 'UidConflict')) {
+            return true;
+        }
         $m = $e->getMessage();
         return str_contains($m, 'Duplicate')
             || str_contains($m, '1062')
@@ -438,38 +543,20 @@ class CalendarService {
      * Find a calendar object by UID when the URI is unknown (conflict resolution fallback).
      */
     private function findObjectByUid(int $calendarId, string $uid): ?array {
-        foreach ($this->calDavBackend->getCalendarObjects($calendarId) as $obj) {
-            $full = $this->hydrateCalendarObject($calendarId, $obj);
-            if ($full === null) {
-                continue;
-            }
-            $objUid = $this->resolveObjectUid($full);
-            if ($objUid === $uid) {
-                return $full;
-            }
-        }
-        return null;
+        return $this->loadExistingObjects($calendarId)[$uid] ?? null;
     }
 
     /**
-     * Simple change detection — compare LAST-MODIFIED or fall back to full diff.
+     * Content comparison, ignoring DTSTAMP (many feeds set it to the time of
+     * the request) and line-ending differences. LAST-MODIFIED/SEQUENCE alone
+     * miss changed overrides and a toggled attendee stripping.
      */
     private function hasChanged(string $existing, string $incoming): bool {
-        preg_match('/^LAST-MODIFIED:(.+)$/m', $existing, $em);
-        preg_match('/^LAST-MODIFIED:(.+)$/m', $incoming, $im);
-
-        if (isset($em[1], $im[1])) {
-            return trim($em[1]) !== trim($im[1]);
-        }
-
-        preg_match('/^SEQUENCE:(\d+)/m', $existing, $es);
-        preg_match('/^SEQUENCE:(\d+)/m', $incoming, $is);
-
-        if (isset($es[1], $is[1])) {
-            return (int)$es[1] !== (int)$is[1];
-        }
-
-        $clean = fn(string $s) => preg_replace('/^DTSTAMP:.+$/m', '', $s);
-        return md5($clean($existing)) !== md5($clean($incoming));
+        $normalise = static fn (string $s): string => (string)preg_replace(
+            '/^DTSTAMP[;:][^\n]*\n/m',
+            '',
+            str_replace("\r\n", "\n", $s),
+        );
+        return $normalise($existing) !== $normalise($incoming);
     }
 }
