@@ -4,38 +4,57 @@ declare(strict_types=1);
 
 namespace OCA\DAV\CalDAV;
 
+use Sabre\DAV\PropPatch;
+
 /**
  * Minimal stub so PHPUnit can mock CalDavBackend without a full Nextcloud tree.
- * At runtime Nextcloud replaces this with the real implementation.
+ * At runtime Nextcloud provides the real implementation.
+ *
+ * Signatures and defaults mirror apps/dav/lib/CalDAV/CalDavBackend.php (NC 30–34);
+ * keep them in sync when using a new method.
  */
 class CalDavBackend {
-    public function getCalendarsForUser(string $principalUri): array {
+    public const CALENDAR_TYPE_CALENDAR = 0;
+    public const CALENDAR_TYPE_SUBSCRIPTION = 1;
+
+    public function getCalendarsForUser($principalUri) {
         return [];
     }
 
-    public function createCalendar(string $principalUri, string $calendarUri, array $properties): int {
-        return 0;
-    }
-
-    public function deleteCalendar(int $calendarId, bool $force = false): void {
-    }
-
-    /** @return list<array<string, mixed>> */
-    public function getCalendarObjects(int $calendarId, int $calendarType = 1): array {
-        return [];
-    }
-
-    /** @return array<string, mixed>|null */
-    public function getCalendarObject(int $calendarId, string $objectUri, int $calendarType = 1): ?array {
+    public function getCalendarById(int $calendarId): ?array {
         return null;
     }
 
-    public function createCalendarObject(int $calendarId, string $objectUri, string $objectData): void {
+    public function createCalendar($principalUri, $calendarUri, array $properties) {
+        return 0;
     }
 
-    public function updateCalendarObject(int $calendarId, string $objectUri, string $objectData): void {
+    public function updateCalendar($calendarId, PropPatch $propPatch) {
     }
 
-    public function deleteCalendarObject(int $calendarId, string $objectUri): void {
+    public function deleteCalendar($calendarId, bool $forceDeletePermanently = false) {
+    }
+
+    public function getCalendarObjects($calendarId, $calendarType = self::CALENDAR_TYPE_CALENDAR): array {
+        return [];
+    }
+
+    public function getCalendarObject($calendarId, $objectUri, int $calendarType = self::CALENDAR_TYPE_CALENDAR) {
+        return null;
+    }
+
+    public function getMultipleCalendarObjects($calendarId, array $uris, $calendarType = self::CALENDAR_TYPE_CALENDAR): array {
+        return [];
+    }
+
+    public function createCalendarObject($calendarId, $objectUri, $calendarData, $calendarType = self::CALENDAR_TYPE_CALENDAR) {
+        return null;
+    }
+
+    public function updateCalendarObject($calendarId, $objectUri, $calendarData, $calendarType = self::CALENDAR_TYPE_CALENDAR) {
+        return null;
+    }
+
+    public function deleteCalendarObject($calendarId, $objectUri, $calendarType = self::CALENDAR_TYPE_CALENDAR, bool $forceDeletePermanently = false) {
     }
 }
