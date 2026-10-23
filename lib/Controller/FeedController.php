@@ -20,6 +20,7 @@ use OCP\AppFramework\Http\Attribute\UserRateLimit;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Controller;
 use OCP\BackgroundJob\IJobList;
+use OCP\IL10N;
 use OCP\IRequest;
 use OCP\Security\ICrypto;
 
@@ -32,6 +33,7 @@ class FeedController extends Controller {
         private readonly CalendarService $calendarService,
         private readonly IJobList $jobList,
         private readonly ICrypto $crypto,
+        private readonly IL10N $l,
     ) {
         parent::__construct(Application::APP_ID, $request);
     }
@@ -212,11 +214,11 @@ class FeedController extends Controller {
 
     /**
      * Trigger an immediate sync for an existing feed.
-     * Rate-limited: 3 per 5 minutes per admin (all feeds combined).
-     * Per-feed cooldown: 5 minutes enforced via DB field.
+     * Rate-limited: 3 fetches per 5 minutes per source server.
+     * The per-feed timestamp is also used to prevent an immediate retry of
+     * the same feed.
      */
     #[AuthorizedAdminSetting(settings: AdminSettings::class)]
-    #[UserRateLimit(limit: 3, period: 300)]
     public function manualSync(int $id): DataResponse {
         try {
             $feed = $this->feedMapper->findById($id);
@@ -224,15 +226,49 @@ class FeedController extends Controller {
             return new DataResponse(['error' => 'Feed not found'], Http::STATUS_NOT_FOUND);
         }
 
-        // Per-feed cooldown: 5 minutes
-        $cooldown    = 300;
-        $lastManual  = $feed->getLastManualSyncAt();
+        $cooldown = 300;
+        $now = time();
+        $serverKey = $this->sourceServerKey($feed->getFeedUrl());
+        $recentServerFetches = 0;
+
+        foreach ($this->feedMapper->findAll() as $candidate) {
+            if ($this->sourceServerKey($candidate->getFeedUrl()) !== $serverKey) {
+                continue;
+            }
+
+            $lastManual = $candidate->getLastManualSyncAt();
+            if ($lastManual !== null && ($now - $lastManual->getTimestamp()) < $cooldown) {
+                $recentServerFetches++;
+            }
+        }
+
+        if ($recentServerFetches >= 3) {
+            return new DataResponse(
+                [
+                    'error' => $this->l->t(
+                        'The source server "%s" has already been queried three times in the last 5 minutes. '
+                        . 'Please wait a moment before syncing another calendar from this server.',
+                        [$serverKey]
+                    ),
+                    'retryAfter' => $cooldown,
+                ],
+                Http::STATUS_TOO_MANY_REQUESTS
+            );
+        }
+
+        $lastManual = $feed->getLastManualSyncAt();
         if ($lastManual !== null) {
-            $secondsSince = time() - $lastManual->getTimestamp();
+            $secondsSince = $now - $lastManual->getTimestamp();
             if ($secondsSince < $cooldown) {
                 $remaining = $cooldown - $secondsSince;
                 return new DataResponse(
-                    ['error' => "Please wait {$remaining} seconds before syncing this feed again."],
+                    [
+                        'error' => $this->l->t(
+                            'This calendar was synced only a moment ago. Please wait %d more seconds.',
+                            [$remaining]
+                        ),
+                        'retryAfter' => $remaining,
+                    ],
                     Http::STATUS_TOO_MANY_REQUESTS
                 );
             }
@@ -242,6 +278,25 @@ class FeedController extends Controller {
         $this->feedMapper->update($feed);
 
         $result = $this->syncService->syncFeed($id);
+        if ($result['locked'] ?? false) {
+            return new DataResponse(
+                ['error' => $this->l->t('This calendar is being synced right now. Please try again shortly.')],
+                Http::STATUS_CONFLICT
+            );
+        }
         return new DataResponse($result);
+    }
+
+    private function sourceServerKey(string $url): string {
+        $parts = parse_url($url);
+        if ($parts !== false && isset($parts['host'])) {
+            $host = strtolower($parts['host']);
+            $port = $parts['port'] ?? null;
+            return $port === null ? $host : $host . ':' . $port;
+        }
+
+        // Feed URLs are validated before saving. Keep a deterministic fallback
+        // for legacy rows that contain an unparsable URL.
+        return strtolower($url);
     }
 }

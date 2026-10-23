@@ -51,7 +51,7 @@ class FeedServiceTest extends TestCase {
         $response = $this->createMock(IResponse::class);
         $response->method('getStatusCode')->willReturn(200);
         $response->method('getBody')->willReturn($validIcs);
-        $response->method('getHeader')->willReturn(null);
+        $response->method('getHeader')->willReturn('');
 
         $client = $this->createMock(IClient::class);
         $client->expects($this->once())
