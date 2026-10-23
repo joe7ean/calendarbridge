@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AGENTS.md` (with a `CLAUDE.md` import), `CONTRIBUTING.md` with versioning and release
+  rules, and architecture decision records in `docs/adr/`.
+- `make version-check` verifies that `info.xml`, `package.json` and the changelog agree.
+
 ### Changed
 
 - `make release` no longer invokes Composer and no longer ships `vendor/`. The app has

@@ -30,7 +30,7 @@ RSYNC_EXCLUDE = \
 	--exclude=phpunit.xml \
 	--exclude='*.log'
 
-.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test clean composer-prod release release-clean
+.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test version-check clean composer-prod release release-clean
 
 help:
 	@echo ""
@@ -46,6 +46,7 @@ help:
 	@echo "  make migrate   Disable + enable app (apply app DB migrations)"
 	@echo "  make logs      Tail NC log on remote"
 	@echo "  make test      Run PHP unit tests locally"
+	@echo "  make version-check  Verify info.xml, package.json and CHANGELOG agree"
 	@echo "  make clean     Remove built assets"
 	@echo "  make release   Build JS, then $(RELEASE_TAR)"
 	@echo "  make release-clean  Remove dist/ and staging dir"
@@ -110,6 +111,14 @@ logs:
 test:
 	@if [ -x ./vendor/bin/phpunit ]; then ./vendor/bin/phpunit; \
 	else echo "Run: composer install  then  ./vendor/bin/phpunit" >&2; exit 1; fi
+
+version-check:
+	@pkg=$$(sed -n -E 's/^  "version": "([^"]*)".*/\1/p' package.json | head -1); \
+	log=$$(sed -n -E 's/^## \[([0-9][0-9.]*)\].*/\1/p' CHANGELOG.md | head -1); \
+	echo "info.xml=$(RELEASE_VER) package.json=$$pkg CHANGELOG=$$log"; \
+	if [ "$(RELEASE_VER)" != "$$pkg" ] || [ "$(RELEASE_VER)" != "$$log" ]; then \
+		echo "Version mismatch" >&2; exit 1; \
+	fi
 
 clean:
 	rm -rf js/ css/ node_modules/

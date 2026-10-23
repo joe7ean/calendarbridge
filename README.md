@@ -159,17 +159,21 @@ The Calendar Bridge Admin Panel UI:
 
 ![Calendar Bridge Admin Panel](screenshots/admin-panel.png)
 
+## Known limitations
+
+- Only `VEVENT`s are mirrored; tasks (`VTODO`) and journals are ignored.
+- A feed that is empty is not applied: existing events stay until the feed delivers events
+  again (see [ADR 0005](docs/adr/0005-empty-feed-protection.md)).
+- Group shares are restored on every sync. Members can hide the calendar for themselves
+  with "Unshare from me".
+- Sharing a subscription natively is not possible in Nextcloud
+  ([nextcloud/server#1600](https://github.com/nextcloud/server/issues/1600)); this app is
+  the workaround until that changes ([ADR 0008](docs/adr/0008-separate-app-instead-of-upstream.md)).
+
 ## Development
 
-Requirements: Node.js 20+, PHP 8.2+, Composer.
-
-```bash
-git clone https://github.com/joe7ean/calendarbridge.git
-cd calendarbridge
-composer install
-npm ci
-npm run build
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) and the
+[architecture decision records](docs/adr/).
 
 ## License
 
