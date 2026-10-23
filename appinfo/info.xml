@@ -16,13 +16,13 @@ Features:
 - Subscribe to any public or authenticated iCal/WebCal feed
 - Automatic background sync (configurable interval, minimum 15 minutes)
 - Read-only sharing with one or more Nextcloud groups
-- HTTP ETag/Last-Modified caching to avoid unnecessary transfers
+- HTTP ETag caching to avoid unnecessary transfers
 - Diff-based sync: only changed events are written
 - Optional stripping of ATTENDEE/ORGANIZER fields (Privacy by Design)
 - Admin notifications on persistent fetch failures
 - Manual sync and connection test from the admin UI
     ]]></description>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
     <licence>agpl</licence>
     <author mail="joe7ean@users.noreply.github.com" homepage="https://github.com/joe7ean">joe7ean</author>
     <namespace>CalendarBridge</namespace>

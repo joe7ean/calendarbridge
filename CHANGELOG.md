@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-24
+
 ### Added
 
 - `AGENTS.md` (with a `CLAUDE.md` import), `CONTRIBUTING.md` with versioning and release
@@ -15,12 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Manual syncs are limited to three per source server within five minutes, on top of
+  the per-feed cooldown. A sync of a feed that is already running returns 409.
 - `make release` no longer invokes Composer and no longer ships `vendor/`. The app has
   no runtime PHP dependencies, and bundling the dev-only OCP stubs into a release
   tarball was a hazard rather than a convenience.
 
 ### Fixed
 
+- **Recurring events with modified or moved occurrences.** All `VEVENT`s sharing a UID
+  are now stored as one calendar object; before, overrides overwrote the series (or
+  each other). Affected objects are repaired on the next sync.
+- **Events that left and re-entered a feed could not be created again** ("Calendar
+  object with uid already exists"), and removing the same event twice aborted the sync.
+  Relay objects are now deleted permanently, and objects left in the trash bin by
+  earlier versions are purged.
+- **The per-feed sync interval was ignored**; every feed synced hourly. The configured
+  interval and the global minimum interval now apply.
+- A valid but empty feed no longer wipes the relay calendar; the sync is skipped and
+  reported as an error.
+- A manual sync and the background job can no longer sync the same feed concurrently.
+- An HTTP password that cannot be decrypted now fails the sync with a clear message
+  instead of fetching without credentials.
+- The connection test was no longer rate-limited after an unfinished refactoring.
+- Time zones referenced by `DTEND`, `RECURRENCE-ID` or `EXDATE` are now copied along
+  with the event, not only the one of `DTSTART`.
+- UIDs containing characters that are unsafe in a URI get a hashed object URI.
+- Background jobs of deleted feeds remove themselves.
 - Manual installation instructions. `git clone` alone leaves the admin panel empty
   because `js/` is a build artifact, and `composer install` was never needed at
   runtime. Documented how to update the app and why it has to be disabled before a

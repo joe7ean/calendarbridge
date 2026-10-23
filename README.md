@@ -17,7 +17,7 @@ Contributions, optimizations, and feedback are highly welcome!
 - **Centralized Management:** Subscribe to external iCal/WebCal feeds once and mirror them internally.
 - **Automated Sync:** Background synchronization via Nextcloud cron.
 - **Group Sharing:** Automatic read-only sharing with any Nextcloud groups.
-- **Efficient:** Diff-based sync and ETag/Last-Modified support prevent redundant downloads.
+- **Efficient:** Diff-based sync and ETag support prevent redundant downloads.
 - **Privacy:** Optional stripping of `ATTENDEE`/`ORGANIZER` email addresses before storage.
 - **Security:** Support for HTTP Basic Auth and strict SSRF protections.
 
