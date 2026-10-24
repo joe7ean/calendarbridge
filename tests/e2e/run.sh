@@ -212,6 +212,13 @@ R=$(h sync "$FEED_ID")
 check "missing calendar is recreated" "$(field "$R" '[$d["added"], $d["calendarId"] !== '"$OLD_CAL"']')" '[3,true]'
 check "and shared again" "$(field "$(h shares "$FEED_ID")" 'count($d)')" 1
 
+echo "lost background job (cron drops jobs of a disabled app, ADR 0014)"
+h removejob "$FEED_ID" >/dev/null
+check "job is gone" "$(field "$(h jobid "$FEED_ID")" '$d["jobId"]')" null
+occ config:app:set calendarbridge jobs_checked_at --value=0 --type=integer >/dev/null
+occ_rc status   # any request that boots the app
+check "job is registered again" "$(field "$(h jobid "$FEED_ID")" '$d["jobId"] !== null')" true
+
 echo "occ"
 occ_rc calendarbridge:check; check "check is healthy" "$?" 0
 check "list shows the feed" "$(occ calendarbridge:list | grep -c "CB-E2E renamed")" 1

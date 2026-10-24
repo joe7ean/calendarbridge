@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\AppInfo;
 
 use OCA\CalendarBridge\Notification\Notifier;
+use OCA\CalendarBridge\Service\JobRegistrar;
 use OCA\CalendarBridge\SetupCheck\FeedHealthCheck;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCP\AppFramework\App;
@@ -12,6 +13,7 @@ use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\Server;
+use Psr\Log\LoggerInterface;
 
 class Application extends App implements IBootstrap {
     public const APP_ID = 'calendarbridge';
@@ -36,5 +38,16 @@ class Application extends App implements IBootstrap {
     }
 
     public function boot(IBootContext $context): void {
+        // Self-healing: restore sync jobs that cron removed while the app was
+        // disabled. Throttled to once per hour; must never break a request.
+        try {
+            $context->injectFn(static function (JobRegistrar $registrar): void {
+                $registrar->ensureJobsThrottled();
+            });
+        } catch (\Throwable $e) {
+            Server::get(LoggerInterface::class)->warning('CalendarBridge: job self-check failed', [
+                'exception' => $e,
+            ]);
+        }
     }
 }

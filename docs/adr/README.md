@@ -24,3 +24,4 @@ does, so that neither humans nor agents "fix" a deliberate trade-off.
 | [0011](0011-compatibility-window.md) | Support at least the last four Nextcloud majors, with 32 as the floor | Accepted |
 | [0012](0012-quarantine-suspicious-feed-results.md) | Quarantine suspicious feed results instead of applying them | Accepted (0.3.0) |
 | [0013](0013-staged-rollout.md) | Staged rollout with pre-release tags | Accepted |
+| [0014](0014-self-healing-job-registration.md) | Self-healing registration of sync jobs | Accepted |

@@ -151,6 +151,11 @@ switch ($argv[1] ?? '') {
         $out(['jobId' => null]);
         break;
 
+    case 'removejob': // removejob <feedId>  – what cron does to jobs of a disabled app
+        Server::get(IJobList::class)->remove(SyncJob::class, ['feedId' => (int)$argv[2]]);
+        $out(['removed' => true]);
+        break;
+
     case 'lastsync': // lastsync <feedId>
         $out(['lastSyncedAt' => $mapper->findById((int)$argv[2])->getLastSyncedAt()?->getTimestamp()]);
         break;
