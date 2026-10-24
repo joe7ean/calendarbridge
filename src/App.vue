@@ -16,6 +16,7 @@
 				@edit="showForm"
 				@delete="confirmDelete"
 				@sync="feedsStore.manualSync"
+				@quarantine="feedsStore.resolveQuarantine"
 			/>
 
 			<FeedForm

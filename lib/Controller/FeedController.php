@@ -20,8 +20,10 @@ use OCP\AppFramework\Http\Attribute\UserRateLimit;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\Controller;
 use OCP\BackgroundJob\IJobList;
+use OCP\IGroupManager;
 use OCP\IL10N;
 use OCP\IRequest;
+use OCP\IUserManager;
 use OCP\Security\ICrypto;
 
 class FeedController extends Controller {
@@ -34,6 +36,8 @@ class FeedController extends Controller {
         private readonly IJobList $jobList,
         private readonly ICrypto $crypto,
         private readonly IL10N $l,
+        private readonly IUserManager $userManager,
+        private readonly IGroupManager $groupManager,
     ) {
         parent::__construct(Application::APP_ID, $request);
     }
@@ -70,6 +74,11 @@ class FeedController extends Controller {
         ?string $httpAuthUser = null,
         ?string $httpAuthPass = null,
     ): DataResponse {
+        $invalid = $this->validate($feedUrl, $feedName, $serviceUser, $calendarColor, $targetGroups);
+        if ($invalid !== null) {
+            return $invalid;
+        }
+
         $feed = new Feed();
         $feed->setFeedUrl($feedUrl);
         $feed->setFeedName($feedName);
@@ -137,6 +146,17 @@ class FeedController extends Controller {
             return new DataResponse(['error' => 'Feed not found'], Http::STATUS_NOT_FOUND);
         }
 
+        $invalid = $this->validate($feedUrl, $feedName, $serviceUser, $calendarColor, $targetGroups);
+        if ($invalid !== null) {
+            return $invalid;
+        }
+
+        $urlChanged        = $feedUrl !== null && $feedUrl !== $feed->getFeedUrl();
+        $serviceUserChanged = $serviceUser !== null && $serviceUser !== $feed->getServiceUser();
+        $propertiesChanged = ($feedName !== null && $feedName !== $feed->getFeedName())
+            || ($calendarColor !== null && $calendarColor !== $feed->getCalendarColor());
+        $reactivated       = $active === true && !$feed->isActive();
+
         if ($feedUrl !== null)       $feed->setFeedUrl($feedUrl);
         if ($feedName !== null)      $feed->setFeedName($feedName);
         if ($serviceUser !== null)   $feed->setServiceUser($serviceUser);
@@ -146,6 +166,32 @@ class FeedController extends Controller {
         if ($stripAttendees !== null) $feed->setStripAttendees($stripAttendees ? 1 : 0);
         if ($verifySsl !== null)     $feed->setVerifySsl($verifySsl ? 1 : 0);
         if ($active !== null)        $feed->setActive($active ? 1 : 0);
+
+        if ($urlChanged) {
+            // Validators and quarantine state belong to the old source.
+            $feed->setLastEtag(null);
+            $feed->setLastModified(null);
+            $feed->setNextAttemptAt(null);
+            $feed->clearQuarantine();
+        }
+        if ($reactivated) {
+            // Start fresh after an auto-pause instead of pausing again on the next error.
+            $feed->setConsecutiveErrors(0);
+            $feed->setNextAttemptAt(null);
+        }
+        if ($serviceUserChanged && $feed->getCalendarId() !== null) {
+            // The relay calendar belongs to the old service user; the next sync
+            // creates a new one for the new owner.
+            $this->calendarService->deleteCalendar($feed->getCalendarId());
+            $feed->setCalendarId(null);
+            $feed->clearQuarantine();
+        } elseif ($propertiesChanged && $feed->getCalendarId() !== null) {
+            $this->calendarService->updateCalendarProperties(
+                $feed->getCalendarId(),
+                $feed->getFeedName(),
+                $feed->getCalendarColor() ?? '#0082c9',
+            );
+        }
 
         if ($clearHttpAuth) {
             $feed->setHttpAuthUser(null);
@@ -285,6 +331,69 @@ class FeedController extends Controller {
             );
         }
         return new DataResponse($result);
+    }
+
+    /**
+     * Apply or reject the result a feed holds in quarantine (ADR 0012).
+     */
+    #[AuthorizedAdminSetting(settings: AdminSettings::class)]
+    public function quarantine(int $id, string $action): DataResponse {
+        try {
+            $feed = $this->feedMapper->findById($id);
+        } catch (DoesNotExistException) {
+            return new DataResponse(['error' => 'Feed not found'], Http::STATUS_NOT_FOUND);
+        }
+        if (!$feed->isInQuarantine()) {
+            return new DataResponse(['error' => $this->l->t('This feed is not in quarantine.')], Http::STATUS_BAD_REQUEST);
+        }
+
+        if ($action === 'reject') {
+            return new DataResponse($this->syncService->rejectQuarantine($id)->toApiArray());
+        }
+        if ($action !== 'apply') {
+            return new DataResponse(['error' => 'Unknown action'], Http::STATUS_BAD_REQUEST);
+        }
+
+        $result = $this->syncService->syncFeed($id, true);
+        if ($result['locked'] ?? false) {
+            return new DataResponse(
+                ['error' => $this->l->t('This calendar is being synced right now. Please try again shortly.')],
+                Http::STATUS_CONFLICT
+            );
+        }
+        return new DataResponse($result + ['feed' => $this->feedMapper->findById($id)->toApiArray()]);
+    }
+
+    /**
+     * Validate feed fields; null values are not checked (partial update).
+     */
+    private function validate(?string $feedUrl, ?string $feedName, ?string $serviceUser, ?string $color, ?array $groups): ?DataResponse {
+        $error = null;
+        if ($feedUrl !== null) {
+            try {
+                $this->feedService->assertValidUrl($feedUrl);
+            } catch (FeedFetchException $e) {
+                $error = $e->getMessage();
+            }
+        }
+        if ($error === null && $feedName !== null && (trim($feedName) === '' || mb_strlen($feedName) > 255)) {
+            $error = $this->l->t('The calendar name must be between 1 and 255 characters.');
+        }
+        if ($error === null && $serviceUser !== null && !$this->userManager->userExists($serviceUser)) {
+            $error = $this->l->t('The service user "%s" does not exist.', [$serviceUser]);
+        }
+        if ($error === null && $color !== null && preg_match('/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/', $color) !== 1) {
+            $error = $this->l->t('The calendar color must be a hex color like #0082c9.');
+        }
+        if ($error === null && $groups !== null) {
+            foreach ($groups as $gid) {
+                if (!is_string($gid) || !$this->groupManager->groupExists($gid)) {
+                    $error = $this->l->t('The group "%s" does not exist.', [(string)$gid]);
+                    break;
+                }
+            }
+        }
+        return $error === null ? null : new DataResponse(['error' => $error], Http::STATUS_BAD_REQUEST);
     }
 
     private function sourceServerKey(string $url): string {

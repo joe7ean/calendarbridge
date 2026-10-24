@@ -23,7 +23,11 @@
 				v-for="feed in feeds"
 				:key="feed.id"
 				class="calbridge-feed-card"
-				:class="{ 'calbridge-feed-card--error': feed.lastStatus === 1, 'calbridge-feed-card--disabled': !feed.active }"
+				:class="{
+					'calbridge-feed-card--error': feed.lastStatus === 1,
+					'calbridge-feed-card--quarantine': !!feed.quarantine,
+					'calbridge-feed-card--disabled': !feed.active,
+				}"
 			>
 				<div class="calbridge-feed-card__color" :style="{ background: feed.calendarColor }" />
 
@@ -46,11 +50,42 @@
 						<span>{{ formatInterval(feed.syncInterval) }}</span>
 					</div>
 
+					<div v-if="feed.quarantine" class="calbridge-feed-card__quarantine">
+						<div>
+							<IconShieldAlert :size="16" />
+							<template v-if="feed.quarantine.reason === 'empty'">
+								{{ t('calendarbridge', 'The feed is suddenly empty. Its {held} events are kept for now.', { held: feed.quarantine.held }) }}
+							</template>
+							<template v-else>
+								{{ t('calendarbridge', 'The feed would remove {held} events at once. They are kept for now.', { held: feed.quarantine.held }) }}
+							</template>
+						</div>
+						<div class="calbridge-feed-card__hint">
+							<template v-if="feed.quarantine.rejected">
+								{{ t('calendarbridge', 'You rejected this change. The events stay until the feed changes again.') }}
+							</template>
+							<template v-else>
+								{{ t('calendarbridge', 'The change is applied automatically once the feed returns the same result for a day (since {date}). You can apply or reject it now.', { date: formatDate(feed.quarantine.since) }) }}
+							</template>
+						</div>
+						<div class="calbridge-feed-card__quarantine-actions">
+							<NcButton type="error" :disabled="syncing[feed.id]" @click="$emit('quarantine', feed.id, 'apply')">
+								{{ t('calendarbridge', 'Apply change') }}
+							</NcButton>
+							<NcButton v-if="!feed.quarantine.rejected" type="secondary" :disabled="syncing[feed.id]" @click="$emit('quarantine', feed.id, 'reject')">
+								{{ t('calendarbridge', 'Keep events') }}
+							</NcButton>
+						</div>
+					</div>
+
 					<div v-if="feed.lastStatus === 1" class="calbridge-feed-card__error">
 						<IconAlertCircle :size="16" />
 						{{ feed.lastError }}
 						<span v-if="feed.lastSyncedAt" class="calbridge-feed-card__timestamp">
 							({{ formatDate(feed.lastSyncedAt) }})
+						</span>
+						<span v-if="feed.nextAttemptAt" class="calbridge-feed-card__timestamp">
+							{{ t('calendarbridge', 'Next attempt: {date}', { date: formatDate(feed.nextAttemptAt) }) }}
 						</span>
 					</div>
 
@@ -91,17 +126,18 @@ import IconRefresh from 'vue-material-design-icons/Refresh.vue'
 import IconPencil from 'vue-material-design-icons/Pencil.vue'
 import IconDelete from 'vue-material-design-icons/Delete.vue'
 import IconAlertCircle from 'vue-material-design-icons/AlertCircle.vue'
+import IconShieldAlert from 'vue-material-design-icons/ShieldAlert.vue'
 import { translate as t } from '@nextcloud/l10n'
 
 export default {
 	name: 'FeedList',
-	components: { NcButton, NcEmptyContent, NcLoadingIcon, IconPlus, IconCalendar, IconRefresh, IconPencil, IconDelete, IconAlertCircle },
+	components: { NcButton, NcEmptyContent, NcLoadingIcon, IconPlus, IconCalendar, IconRefresh, IconPencil, IconDelete, IconAlertCircle, IconShieldAlert },
 	props: {
 		feeds: { type: Array, required: true },
 		syncing: { type: Object, default: () => ({}) },
 		loading: { type: Boolean, default: false },
 	},
-	emits: ['add', 'edit', 'delete', 'sync'],
+	emits: ['add', 'edit', 'delete', 'sync', 'quarantine'],
 
 	methods: {
 		t,
@@ -151,6 +187,33 @@ export default {
 }
 .calbridge-feed-card--error {
 	border-color: var(--color-error);
+}
+.calbridge-feed-card--quarantine {
+	border-color: var(--color-warning);
+}
+.calbridge-feed-card__quarantine {
+	margin-top: 6px;
+	padding: 8px 10px;
+	border-radius: var(--border-radius);
+	background: var(--color-warning-hover, var(--color-background-dark));
+	font-size: 0.85em;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.calbridge-feed-card__quarantine > div:first-child {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-weight: 600;
+}
+.calbridge-feed-card__hint {
+	color: var(--color-text-maxcontrast);
+}
+.calbridge-feed-card__quarantine-actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
 }
 .calbridge-feed-card--disabled {
 	opacity: 0.6;

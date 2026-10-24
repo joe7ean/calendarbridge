@@ -44,6 +44,11 @@ class SettingsController extends Controller {
             'allow_http'              => $this->appConfig->getValueBool(Application::APP_ID, 'allow_http', false),
             'strip_attendees_default' => $this->appConfig->getValueBool(Application::APP_ID, 'strip_attendees_default', true),
             'http_timeout'            => $this->appConfig->getValueInt(Application::APP_ID, 'http_timeout', 30),
+            'max_events'              => $this->appConfig->getValueInt(Application::APP_ID, 'max_events', 20000),
+            'quarantine_min_deletions' => $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_min_deletions', 10),
+            'quarantine_ratio_percent' => $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_ratio_percent', 50),
+            'quarantine_confirm_hours' => $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_confirm_hours', 24),
+            'quarantine_confirm_syncs' => $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_confirm_syncs', 2),
         ]);
     }
 
@@ -56,7 +61,26 @@ class SettingsController extends Controller {
         ?bool $allow_http = null,
         ?bool $strip_attendees_default = null,
         ?int $http_timeout = null,
+        ?int $max_events = null,
+        ?int $quarantine_min_deletions = null,
+        ?int $quarantine_ratio_percent = null,
+        ?int $quarantine_confirm_hours = null,
+        ?int $quarantine_confirm_syncs = null,
     ): DataResponse {
+        // Bounded so that a typo cannot switch a safety net off entirely.
+        $bounded = [
+            'max_events'               => [$max_events, 100, 200000],
+            'quarantine_min_deletions' => [$quarantine_min_deletions, 1, 10000],
+            'quarantine_ratio_percent' => [$quarantine_ratio_percent, 10, 100],
+            'quarantine_confirm_hours' => [$quarantine_confirm_hours, 1, 168],
+            'quarantine_confirm_syncs' => [$quarantine_confirm_syncs, 2, 20],
+        ];
+        foreach ($bounded as $key => [$value, $min, $max]) {
+            if ($value !== null) {
+                $this->appConfig->setValueInt(Application::APP_ID, $key, max($min, min($max, $value)));
+            }
+        }
+
         if ($default_service_user !== null) {
             $this->appConfig->setValueString(Application::APP_ID, 'default_service_user', $default_service_user);
         }

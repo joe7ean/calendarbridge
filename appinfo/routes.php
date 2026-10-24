@@ -15,6 +15,7 @@ return [
         // Feed actions
         ['name' => 'feed#preview',    'url' => '/api/feeds/preview',     'verb' => 'POST'],
         ['name' => 'feed#manualSync', 'url' => '/api/feeds/{id}/sync',   'verb' => 'POST'],
+        ['name' => 'feed#quarantine', 'url' => '/api/feeds/{id}/quarantine', 'verb' => 'POST'],
 
         // Global settings
         ['name' => 'settings#getSettings', 'url' => '/api/settings', 'verb' => 'GET'],

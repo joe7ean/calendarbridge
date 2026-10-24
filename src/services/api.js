@@ -11,6 +11,7 @@ export const feedsApi = {
 	delete: (id) => axios.delete(`${base}/feeds/${id}`),
 	preview: (data) => axios.post(`${base}/feeds/preview`, data),
 	manualSync: (id) => axios.post(`${base}/feeds/${id}/sync`),
+	quarantine: (id, action) => axios.post(`${base}/feeds/${id}/quarantine`, { action }),
 }
 
 export const settingsApi = {
