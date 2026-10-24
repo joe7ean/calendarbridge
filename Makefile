@@ -2,7 +2,10 @@ NC_HOST     ?= root@10.0.0.100
 NC_APPS_DIR ?= /var/lib/nextcloud/apps
 APP_ID      ?= calendarbridge
 DEPLOY_PATH  = $(NC_APPS_DIR)/$(APP_ID)
-OCC          = ssh $(NC_HOST) 'php -d memory_limit=512M /usr/share/webapps/nextcloud/occ'
+NC_ROOT     ?= /usr/share/webapps/nextcloud
+NC_PHP      ?= php
+OCC          = ssh $(NC_HOST) 'php -d memory_limit=512M $(NC_ROOT)/occ'
+E2E_DIR     ?= /tmp/cb-e2e-src
 
 # Packaged app tarball (see `make release`)
 DIST_DIR         ?= dist
@@ -30,7 +33,7 @@ RSYNC_EXCLUDE = \
 	--exclude=phpunit.xml \
 	--exclude='*.log'
 
-.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test version-check clean composer-prod release release-clean
+.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test e2e version-check clean composer-prod release release-clean
 
 help:
 	@echo ""
@@ -46,6 +49,7 @@ help:
 	@echo "  make migrate   Disable + enable app (apply app DB migrations)"
 	@echo "  make logs      Tail NC log on remote"
 	@echo "  make test      Run PHP unit tests locally"
+	@echo "  make e2e       Run end-to-end scenarios on $(NC_HOST) (app must be deployed)"
 	@echo "  make version-check  Verify info.xml, package.json and CHANGELOG agree"
 	@echo "  make clean     Remove built assets"
 	@echo "  make release   Build JS, then $(RELEASE_TAR)"
@@ -111,6 +115,12 @@ logs:
 test:
 	@if [ -x ./vendor/bin/phpunit ]; then ./vendor/bin/phpunit; \
 	else echo "Run: composer install  then  ./vendor/bin/phpunit" >&2; exit 1; fi
+
+# End-to-end scenarios against the deployed app on $(NC_HOST) (see tests/e2e/run.sh).
+e2e:
+	ssh $(NC_HOST) 'rm -rf $(E2E_DIR)'
+	scp -rq tests/e2e $(NC_HOST):$(E2E_DIR)
+	ssh $(NC_HOST) 'chmod -R a+rX $(E2E_DIR) && cd /tmp && NC_ROOT=$(NC_ROOT) PHP=$(NC_PHP) sh $(E2E_DIR)/run.sh'
 
 version-check:
 	@pkg=$$(sed -n -E 's/^  "version": "([^"]*)".*/\1/p' package.json | head -1); \

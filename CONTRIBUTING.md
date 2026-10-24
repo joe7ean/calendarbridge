@@ -45,11 +45,35 @@ The version lives in three places that must match: `appinfo/info.xml` (authorita
 `package.json` and the newest released heading in `CHANGELOG.md`. `make version-check`
 verifies this.
 
+## Supported Nextcloud versions
+
+At least the last four Nextcloud majors, with Nextcloud 32 as the floor. The floor is
+only raised when a breaking change forces it ([ADR 0011](docs/adr/0011-compatibility-window.md)).
+`min-version`/`max-version` in `info.xml` must only cover versions that passed the tests.
+
 ## Release checklist
 
-1. Move the `[Unreleased]` entries to a new `## [x.y.z] - YYYY-MM-DD` section.
-2. Bump `appinfo/info.xml` and `package.json`; run `make version-check`.
-3. Check `max-version` in `info.xml` against the Nextcloud versions you actually tested.
-4. Commit `chore(release): x.y.z`, tag `vx.y.z`, push branch and tag.
-5. `make release` → `dist/calendarbridge-x.y.z.tar.gz`; attach it to the GitHub release.
-6. Update installation: replace the app directory, do not unpack over it (see README).
+Every release goes through three stages ([ADR 0013](docs/adr/0013-staged-rollout.md)).
+
+**Stage 1 – test instance**
+
+1. `composer test` is green.
+2. `make deploy` (or the tarball), then `make e2e` → `ALL SCENARIOS PASSED`.
+3. Check the Nextcloud log for warnings or errors from `calendarbridge`.
+
+**Stage 2 – production instance, test scope**
+
+4. Set the version to `x.y.z-beta.N` in `info.xml` and `package.json`, build with
+   `make release`, and tag `vx.y.z-beta.N`.
+5. Install it on the production instance. Only dedicated test feeds and a test group of
+   informed users may be used. Keep it running for at least one full sync cycle of every
+   test feed (≥ 24 h if sync or quarantine logic changed).
+
+**Stage 3 – final**
+
+6. Move the `[Unreleased]` entries to a new `## [x.y.z] - YYYY-MM-DD` section.
+7. Set the final version, run `make version-check`, and check `min-`/`max-version`.
+8. Commit `chore(release): x.y.z`, tag `vx.y.z`, push the branch and the tag.
+9. `make release` → `dist/calendarbridge-x.y.z.tar.gz`; attach it to the GitHub release.
+10. Update the production instance: replace the app directory, do not unpack over it
+    (see README). Watch the log for a day.

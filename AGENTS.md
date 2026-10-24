@@ -48,8 +48,9 @@ No PHP on the host? Run tests in a container:
 ## Invariants – do not break
 
 1. **Never delete relay events because of a failed, partial or suspicious fetch.** Only a
-   successfully parsed feed is the source of truth; empty feeds follow
-   [ADR 0005](docs/adr/0005-empty-feed-protection.md).
+   successfully parsed feed is the source of truth. Empty results and mass deletions are
+   held in quarantine ([ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md)).
+   When in doubt, keep data and tell the admin.
 2. **One calendar object per UID.** A recurring series (master + `RECURRENCE-ID`
    overrides) is stored as one object ([ADR 0009](docs/adr/0009-one-object-per-uid.md)).
 3. **Relay objects are deleted permanently** (`forceDeletePermanently = true`), never into
@@ -60,8 +61,20 @@ No PHP on the host? Run tests in a container:
    Log feed IDs, counts and technical error messages only.
 6. **No runtime PHP dependencies.** `composer.json` is dev-only; Sabre/VObject comes from Nextcloud.
 7. Only public `OCP\` APIs, plus `OCA\DAV\CalDAV\CalDavBackend` (wired in `Application`).
-   Check method signatures against the Nextcloud versions in `appinfo/info.xml`
-   (currently 30–34) — the stub in `tests/stubs/` must match the real signatures.
+   **Compatibility:** at least the last four Nextcloud majors, with 32 as the floor
+   ([ADR 0011](docs/adr/0011-compatibility-window.md)). Check every `CalDavBackend` method
+   and internal table you use against each supported major; the stub in
+   `tests/stubs/` must match the real signatures.
+8. **Fail safe.** Every external input (HTTP response, feed content, admin input) is
+   validated, every limit (size, event count, timeout) is enforced, and every error leaves
+   the relay calendar unchanged and is visible to the admin (status, notification, log).
+
+## Releases and testing on real instances
+
+Releases go through three stages ([ADR 0013](docs/adr/0013-staged-rollout.md)): the LAN
+test instance with `tests/e2e/run.sh`, then a `-beta.N` release on the production instance
+for test feeds and informed test users only, then the final tag. Never deploy to the
+production instance without the user's explicit go-ahead.
 
 ## Conventions
 
@@ -87,3 +100,5 @@ No PHP on the host? Run tests in a container:
 
 - `YUNOHOST.md` (gitignored): private notes for the production instance.
 - `.cursor/`: editor-local, ignored.
+- `featurelog`, `buglog` (gitignored): private scratch lists for spontaneous ideas and
+  observed bugs. Append on request; not a commitment or roadmap.

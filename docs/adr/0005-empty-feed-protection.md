@@ -1,6 +1,6 @@
 # 0005. Protect relay calendars from empty feeds
 
-- Status: Accepted
+- Status: Superseded by [0012](0012-quarantine-suspicious-feed-results.md)
 - Date: 2026-10-24
 
 ## Context

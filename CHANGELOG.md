@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- End-to-end scenario script (`tests/e2e/run.sh`, `make e2e`) that exercises a deployed app
+  on a real Nextcloud: recurring series, change/delete/re-add, trash-bin purge, empty
+  feed, job interval and concurrent syncs.
+- ADRs for the compatibility window (0011), quarantine of suspicious feed results (0012,
+  replacing 0005) and the staged rollout (0013).
+
 ## [0.2.1] - 2026-10-24
 
 ### Added

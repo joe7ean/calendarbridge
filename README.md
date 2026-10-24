@@ -163,7 +163,7 @@ The Calendar Bridge Admin Panel UI:
 
 - Only `VEVENT`s are mirrored; tasks (`VTODO`) and journals are ignored.
 - A feed that is empty is not applied: existing events stay until the feed delivers events
-  again (see [ADR 0005](docs/adr/0005-empty-feed-protection.md)).
+  again (see [ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md)).
 - Group shares are restored on every sync. Members can hide the calendar for themselves
   with "Unshare from me".
 - Sharing a subscription natively is not possible in Nextcloud
