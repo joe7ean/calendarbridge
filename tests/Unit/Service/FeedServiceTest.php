@@ -44,6 +44,7 @@ class FeedServiceTest extends TestCase {
         $this->appConfig->method('getValueInt')->willReturnMap([
             ['calendarbridge', 'http_timeout', 30, 30],
             ['calendarbridge', 'max_feed_size_mb', 10, 10],
+            ['calendarbridge', 'max_events', 20000, 20000],
         ]);
 
         $validIcs = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR";
@@ -103,6 +104,96 @@ class FeedServiceTest extends TestCase {
         $result = $this->service->fetch('https://example.org/cal.ics', '"etag123"');
         $this->assertTrue($result['notModified']);
         $this->assertNull($result['calendar']);
+    }
+
+    /**
+     * @param array<string, string> $headers
+     * @param string|resource $body
+     */
+    private function respond(int $status, mixed $body = '', array $headers = [], ?array &$options = null): void {
+        $this->hostValidator->method('isValid')->willReturn(true);
+        $this->appConfig->method('getValueBool')->willReturn(false);
+        $this->appConfig->method('getValueInt')->willReturnCallback(
+            static fn (string $app, string $key, int $default) => $key === 'max_feed_size_mb' ? 1 : ($key === 'max_events' ? 2 : $default),
+        );
+
+        $response = $this->createMock(IResponse::class);
+        $response->method('getStatusCode')->willReturn($status);
+        $response->method('getBody')->willReturn($body);
+        $response->method('getHeader')->willReturnCallback(static fn (string $h) => $headers[$h] ?? '');
+
+        $client = $this->createMock(IClient::class);
+        $client->method('get')->willReturnCallback(function (string $url, array $opts) use (&$options, $response) {
+            $options = $opts;
+            return $response;
+        });
+        $this->clientService->method('newClient')->willReturn($client);
+    }
+
+    public function testRedirectTargetsAreValidatedAgainstSsrf(): void {
+        $options = null;
+        $this->respond(304, '', [], $options);
+        $this->service->fetch('https://example.org/cal.ics');
+
+        self::assertFalse($options['http_errors']);
+        self::assertSame(['https'], $options['allow_redirects']['protocols']);
+        $onRedirect = $options['allow_redirects']['on_redirect'];
+        self::assertIsCallable($onRedirect);
+
+        // A redirect to a scheme or host that is not allowed aborts the request.
+        $this->expectException(FeedFetchException::class);
+        $onRedirect(null, null, 'http://127.0.0.1/admin');
+    }
+
+    public function testConditionalHeadersAreSent(): void {
+        $options = null;
+        $this->respond(304, '', [], $options);
+        $this->service->fetch('https://example.org/cal.ics', '"e"', null, null, true, 'Sat, 24 Oct 2026 10:00:00 GMT');
+
+        self::assertSame('"e"', $options['headers']['If-None-Match']);
+        self::assertSame('Sat, 24 Oct 2026 10:00:00 GMT', $options['headers']['If-Modified-Since']);
+    }
+
+    public function testRetryAfterIsReportedOn429(): void {
+        $this->respond(429, '', ['Retry-After' => '120']);
+        try {
+            $this->service->fetch('https://example.org/cal.ics');
+            self::fail('Expected FeedFetchException');
+        } catch (FeedFetchException $e) {
+            self::assertSame(120, $e->getRetryAfter());
+            self::assertSame(429, $e->getCode());
+        }
+    }
+
+    public function testStreamedBodyOverTheSizeLimitIsRejected(): void {
+        $stream = fopen('php://memory', 'r+');
+        fwrite($stream, "BEGIN:VCALENDAR\r\n" . str_repeat('X', 1024 * 1024 + 10));
+        rewind($stream);
+        $this->respond(200, $stream, ['Content-Type' => 'text/calendar']);
+
+        $this->expectException(FeedFetchException::class);
+        $this->expectExceptionMessageMatches('/maximum size/');
+        $this->service->fetch('https://example.org/cal.ics');
+    }
+
+    public function testDeclaredContentLengthOverTheLimitIsRejectedBeforeReading(): void {
+        $this->respond(200, '', ['Content-Length' => (string)(5 * 1024 * 1024)]);
+
+        $this->expectException(FeedFetchException::class);
+        $this->expectExceptionMessageMatches('/maximum size/');
+        $this->service->fetch('https://example.org/cal.ics');
+    }
+
+    public function testTooManyEventsAreRejected(): void {
+        $ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n";
+        foreach (['a', 'b', 'c'] as $uid) {
+            $ics .= "BEGIN:VEVENT\r\nUID:$uid\r\nDTSTART:20260101T100000Z\r\nEND:VEVENT\r\n";
+        }
+        $this->respond(200, $ics . "END:VCALENDAR\r\n", ['Content-Type' => 'text/calendar']);
+
+        $this->expectException(FeedFetchException::class);
+        $this->expectExceptionMessageMatches('/more than the limit of 2/');
+        $this->service->fetch('https://example.org/cal.ics');
     }
 
     public function testAttendeesStrippedWhenEnabled(): void {
