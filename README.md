@@ -17,13 +17,17 @@ Contributions, optimizations, and feedback are highly welcome!
 - **Centralized Management:** Subscribe to external iCal/WebCal feeds once and mirror them internally.
 - **Automated Sync:** Background synchronization via Nextcloud cron.
 - **Group Sharing:** Automatic read-only sharing with any Nextcloud groups.
-- **Efficient:** Diff-based sync and ETag support prevent redundant downloads.
+- **Efficient:** Diff-based sync and ETag/Last-Modified support prevent redundant downloads.
+- **Fail-safe:** An empty feed or a sudden mass deletion is held in quarantine instead of
+  wiping the shared calendar; failing feeds back off and notify admins.
+- **Observable:** Health check in the admin overview and `occ calendarbridge:*` commands.
 - **Privacy:** Optional stripping of `ATTENDEE`/`ORGANIZER` email addresses before storage.
-- **Security:** Support for HTTP Basic Auth and strict SSRF protections.
+- **Security:** Support for HTTP Basic Auth and strict SSRF protections, including redirects.
 
 ## Requirements
 
-- Nextcloud 30 – 34
+- Nextcloud 32 – 35 (at least the last four majors are supported, see
+  [ADR 0011](docs/adr/0011-compatibility-window.md))
 - PHP 8.2+ (8.5 recommended on Nextcloud 34)
 - Reliable Nextcloud cron (systemd timer or crontab recommended)
 - DAV app enabled
@@ -159,11 +163,40 @@ The Calendar Bridge Admin Panel UI:
 
 ![Calendar Bridge Admin Panel](screenshots/admin-panel.png)
 
+## Operation
+
+### Quarantine
+
+If a feed suddenly returns no events, or would remove at least half of the relay
+calendar's events (and at least 10), the deletions are **held** — additions and changes
+still apply. Admins are notified and the feed card shows two buttons:
+
+- **Apply change** — the removals were intended; delete the events now.
+- **Keep events** — the result is wrong; keep the events until the feed changes again.
+
+Without a decision the change is applied automatically once the feed has returned the
+same result for at least 24 hours and two syncs. Background:
+[ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md).
+
+Thresholds (app settings, `occ config:app:set calendarbridge <key> --value=<n>`):
+`quarantine_min_deletions` (10), `quarantine_ratio_percent` (50),
+`quarantine_confirm_hours` (24), `quarantine_confirm_syncs` (2), plus `max_events` (20000).
+
+### Monitoring and occ
+
+```bash
+occ calendarbridge:list                       # feeds and their state
+occ calendarbridge:check                      # exit 0 = healthy, 1 = warnings, 2 = errors
+occ calendarbridge:sync 3                     # sync feed 3 now (or --all)
+occ calendarbridge:quarantine 3 --apply       # or --reject
+```
+
+`calendarbridge:check` is suitable for monitoring systems. The same findings appear in
+*Administration → Overview*.
+
 ## Known limitations
 
 - Only `VEVENT`s are mirrored; tasks (`VTODO`) and journals are ignored.
-- A feed that is empty is not applied: existing events stay until the feed delivers events
-  again (see [ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md)).
 - Group shares are restored on every sync. Members can hide the calendar for themselves
   with "Unshare from me".
 - Sharing a subscription natively is not possible in Nextcloud

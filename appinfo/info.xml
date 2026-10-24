@@ -22,7 +22,7 @@ Features:
 - Admin notifications on persistent fetch failures
 - Manual sync and connection test from the admin UI
     ]]></description>
-    <version>0.2.1</version>
+    <version>0.3.0-beta.1</version>
     <licence>agpl</licence>
     <author mail="joe7ean@users.noreply.github.com" homepage="https://github.com/joe7ean">joe7ean</author>
     <namespace>CalendarBridge</namespace>
@@ -36,8 +36,14 @@ Features:
     <screenshot>https://raw.githubusercontent.com/joe7ean/calendarbridge/main/screenshots/admin-panel.png</screenshot>
     <dependencies>
         <php min-version="8.2"/>
-        <nextcloud min-version="30" max-version="34"/>
+        <nextcloud min-version="32" max-version="35"/>
     </dependencies>
+    <commands>
+        <command>OCA\CalendarBridge\Command\ListFeeds</command>
+        <command>OCA\CalendarBridge\Command\Check</command>
+        <command>OCA\CalendarBridge\Command\Sync</command>
+        <command>OCA\CalendarBridge\Command\QuarantineCommand</command>
+    </commands>
     <settings>
         <admin>OCA\CalendarBridge\Settings\AdminSettings</admin>
         <admin-section>OCA\CalendarBridge\Settings\AdminSection</admin-section>

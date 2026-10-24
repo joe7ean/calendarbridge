@@ -9,11 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- End-to-end scenario script (`tests/e2e/run.sh`, `make e2e`) that exercises a deployed app
-  on a real Nextcloud: recurring series, change/delete/re-add, trash-bin purge, empty
-  feed, job interval and concurrent syncs.
-- ADRs for the compatibility window (0011), quarantine of suspicious feed results (0012,
-  replacing 0005) and the staged rollout (0013).
+- **Quarantine for suspicious feed results** ([ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md)).
+  If a feed is suddenly empty, or would remove at least half of the events and at least
+  10, the deletions are held while additions and changes still apply. They are applied
+  once the same result has been seen in two syncs over 24 hours, or when an admin applies
+  them. An admin can also reject them, so the events are kept. Admins are notified, and
+  the feed shows the state with "Apply change" / "Keep events" buttons. The thresholds are
+  configurable (`quarantine_*` app settings).
+- **Health check** in *Administration → Overview*, which warns about AJAX cron mode, missing
+  service users, groups or background jobs, overdue, failing or quarantined feeds and
+  missing relay calendars.
+- occ commands: `calendarbridge:list`, `calendarbridge:check` (exit code 0/1/2 for
+  monitoring), `calendarbridge:sync <id>|--all` and
+  `calendarbridge:quarantine <id> --apply|--reject`.
+- Exponential backoff after failed syncs (up to one day), honouring `Retry-After` on
+  HTTP 429/503. The admin UI shows the next attempt.
+- `If-Modified-Since` / `Last-Modified` support in addition to ETag.
+- Plausibility limits: at most 20 000 events per feed (`max_events`), and feeds whose
+  events carry no UID are rejected.
+- Feed input is validated when saving: URL (scheme and SSRF check), existing service user
+  and groups, name and color.
+- End-to-end scenarios (`tests/e2e/run.sh`, `make e2e`) against a deployed app, and
+  `tests/e2e/container.sh <major>` against throw-away Nextcloud containers.
+- ADRs for the compatibility window (0011), quarantine (0012, replacing 0005) and the
+  staged rollout (0013).
+
+### Changed
+
+- **Supported Nextcloud versions are now 32–35** (was 30–34), tested on 32, 34 and 35
+  ([ADR 0011](docs/adr/0011-compatibility-window.md)).
+- An empty feed is no longer an error that pauses the feed after 10 runs; it is
+  quarantined instead.
+- Renaming or recolouring a feed updates the relay calendar. Changing the service user
+  moves the feed to a new relay calendar of that user. Changing the URL resets the HTTP
+  validators and any quarantine.
+- Re-activating a paused feed resets its error counter.
+- The relay calendar is identified by its ID only. A calendar deleted outside the app is
+  recreated; a calendar is no longer adopted by its display name.
+- Notifications link to the admin settings and use `UnknownNotificationException` for
+  unknown subjects.
+
+### Security
+
+- **Redirects bypassed the SSRF protection.** The app's own `allow_redirects` option
+  replaced Nextcloud's redirect guard, so a public feed URL could redirect to an internal
+  address. Every redirect target is now validated (scheme and host).
+- The size limit is enforced while the response is streamed (and up front via
+  `Content-Length`), instead of after downloading the whole body.
 
 ## [0.2.1] - 2026-10-24
 
