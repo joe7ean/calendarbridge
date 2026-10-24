@@ -99,15 +99,46 @@ switch ($argv[1] ?? '') {
         $out(['softDeleted' => $argv[3]]);
         break;
 
-    case 'set': // set <feedId> <field> <value>  – feedUrl | lastSyncedAgo (seconds) | active
+    case 'set': // set <feedId> <field> <value>
         $feed = $mapper->findById((int)$argv[2]);
         match ($argv[3]) {
-            'feedUrl'       => $feed->setFeedUrl($argv[4]),
-            'lastSyncedAgo' => $feed->setLastSyncedAt(new \DateTime('@' . (time() - (int)$argv[4]))),
-            'active'        => $feed->setActive((int)$argv[4]),
+            'feedUrl'             => $feed->setFeedUrl($argv[4]),
+            'lastSyncedAgo'       => $feed->setLastSyncedAt(new \DateTime('@' . (time() - (int)$argv[4]))),
+            'quarantineSinceAgo'  => $feed->setQuarantineSince(new \DateTime('@' . (time() - (int)$argv[4]))),
+            'nextAttemptAt'       => $feed->setNextAttemptAt($argv[4] === 'null' ? null : new \DateTime('@' . (time() + (int)$argv[4]))),
+            'active'              => $feed->setActive((int)$argv[4]),
         };
         $mapper->update($feed);
         $out(['ok' => true]);
+        break;
+
+    case 'state': // state <feedId>  – the feed as the API sees it
+        $out($mapper->findById((int)$argv[2])->toApiArray());
+        break;
+
+    case 'rename': // rename <feedId> <name> <color>  – what FeedController::update() does
+        $feed = $mapper->findById((int)$argv[2]);
+        $feed->setFeedName($argv[3]);
+        $feed->setCalendarColor($argv[4]);
+        $mapper->update($feed);
+        Server::get(CalendarService::class)->updateCalendarProperties($feed->getCalendarId(), $argv[3], $argv[4]);
+        $out(['ok' => true]);
+        break;
+
+    case 'calendar': // calendar <feedId>  – relay calendar properties, or null if missing
+        $feed = $mapper->findById((int)$argv[2]);
+        $cal = $feed->getCalendarId() === null ? null : $calDav->getCalendarById($feed->getCalendarId());
+        $out($cal === null ? null : [
+            'id'    => (int)$cal['id'],
+            'name'  => $cal['{DAV:}displayname'] ?? null,
+            'color' => $cal['{http://apple.com/ns/ical/}calendar-color'] ?? null,
+        ]);
+        break;
+
+    case 'dropcalendar': // dropcalendar <feedId>  – delete the relay calendar behind the app's back
+        $feed = $mapper->findById((int)$argv[2]);
+        $calDav->deleteCalendar($feed->getCalendarId(), true);
+        $out(['dropped' => $feed->getCalendarId()]);
         break;
 
     case 'jobid': // jobid <feedId>

@@ -30,7 +30,13 @@ as_web() { su -s /bin/sh "$WEB_USER" -c "$*"; }
 occ_rc() { as_web "cd '$NC_ROOT' && $PHP -d memory_limit=512M occ $*" >/dev/null 2>&1; }
 occ() { as_web "cd '$NC_ROOT' && $PHP -d memory_limit=512M occ $*" 2>&1 | grep -v 'memory limit'; }
 die() { echo "SETUP FAILED: $*" >&2; exit 100; }
-h() { as_web "NC_ROOT='$NC_ROOT' $PHP -d memory_limit=512M '$DIR/harness.php' $*" 2>/dev/null | grep -v 'memory limit'; }
+# quote <arg>: single-quote one argument for the `su -c` command string
+quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+h() {
+	args=''
+	for a in "$@"; do args="$args $(quote "$a")"; done
+	as_web "NC_ROOT='$NC_ROOT' $PHP -d memory_limit=512M '$DIR/harness.php'$args" 2>/dev/null | grep -v 'memory limit'
+}
 # field <json> <php expression on $d>
 field() { printf '%s' "$1" | $PHP -r '$d = json_decode(stream_get_contents(STDIN), true); echo json_encode(eval("return $argv[1];"), JSON_UNESCAPED_SLASHES);' "$2"; }
 
@@ -80,7 +86,8 @@ SRV_PID=$!
 CB_FEED_FILE="$FEED" $PHP -S 127.0.0.1:$SLOW_PORT "$DIR/slow-router.php" >/dev/null 2>&1 &
 SLOW_PID=$!
 sleep 1
-wget -qO /dev/null "http://127.0.0.1:$PORT/feed.ics" || die "feed server on port $PORT not reachable"
+$PHP -r 'exit(@file_get_contents($argv[1]) === false ? 1 : 0);' "http://127.0.0.1:$PORT/feed.ics" \
+	|| die "feed server on port $PORT not reachable"
 
 FEED_ID=$(field "$(h create "http://127.0.0.1:$PORT/feed.ics" CB-E2E "$SERVICE_USER" "$GROUP")" '$d["id"]')
 case "$FEED_ID" in ''|*[!0-9]*) die "could not create feed: $FEED_ID" ;; esac
@@ -122,11 +129,42 @@ h softdelete "$FEED_ID" cbtest-single-1.ics >/dev/null
 check "re-created after purge" "$(field "$(h sync "$FEED_ID")" '$d["added"]')" 1
 check "trash bin empty" "$(field "$(h trashed "$FEED_ID")" '$d["trashed"]')" 0
 
-echo "empty feed"
+echo "empty feed → quarantine (ADR 0012)"
 printf 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//e2e//EN\r\nEND:VCALENDAR\r\n' > "$FEED"
-check "nothing deleted" "$(field "$(h sync "$FEED_ID")" '$d["deleted"]')" 0
+R=$(h sync "$FEED_ID")
+check "nothing deleted, 3 held" "$(field "$R" '[$d["deleted"], $d["held"]]')" '[0,3]'
+check "status quarantine, not an error" "$(field "$R" '[$d["status"], $d["errors"]]')" '[3,0]'
 check "relay calendar intact" "$(field "$(h objects "$FEED_ID")" 'count($d)')" 3
-cp "$DIR/fixtures/series.ics" "$FEED"; h sync "$FEED_ID" >/dev/null
+check "second sight within a day still held" "$(field "$(h sync "$FEED_ID")" '$d["held"]')" 3
+occ_rc calendarbridge:check; check "occ check reports a warning" "$?" 1
+h set "$FEED_ID" quarantineSinceAgo 90000 >/dev/null
+R=$(h sync "$FEED_ID")
+check "confirmed after a day: applied" "$(field "$R" '[$d["deleted"], $d["status"]]')" '[3,0]'
+cp "$DIR/fixtures/series.ics" "$FEED"
+check "events come back" "$(field "$(h sync "$FEED_ID")" '$d["added"]')" 3
+
+echo "mass deletion → quarantine, reject and apply via occ"
+{
+	sed '/^END:VCALENDAR/d' "$DIR/fixtures/series.ics"
+	i=1; while [ $i -le 12 ]; do
+		printf 'BEGIN:VEVENT\r\nUID:bulk-%d\r\nDTSTAMP:20261024T000000Z\r\nDTSTART:202612%02dT100000Z\r\nSUMMARY:Bulk %d\r\nEND:VEVENT\r\n' $i $i $i
+		i=$((i + 1))
+	done
+	printf 'END:VCALENDAR\r\n'
+} > "$WORK/big.ics"
+cp "$WORK/big.ics" "$FEED"
+check "12 bulk events added" "$(field "$(h sync "$FEED_ID")" '$d["added"]')" 12
+cp "$DIR/fixtures/series.ics" "$FEED"
+R=$(h sync "$FEED_ID")
+check "12 of 15 disappearing are held" "$(field "$R" '[$d["deleted"], $d["held"], $d["status"]]')" '[0,12,3]'
+occ_rc calendarbridge:quarantine "$FEED_ID" --reject
+check "rejected result is shown as rejected" "$(field "$(h state "$FEED_ID")" '$d["quarantine"]["rejected"]')" true
+h set "$FEED_ID" quarantineSinceAgo 200000 >/dev/null
+h sync "$FEED_ID" >/dev/null
+check "rejected result is not applied after a day" "$(field "$(h objects "$FEED_ID")" 'count($d)')" 15
+occ_rc calendarbridge:quarantine "$FEED_ID" --apply
+check "admin apply deletes" "$(field "$(h objects "$FEED_ID")" 'count($d)')" 3
+check "quarantine cleared" "$(field "$(h state "$FEED_ID")" '$d["quarantine"]')" null
 
 echo "background job honours the interval"
 JOB=$(field "$(h jobid "$FEED_ID")" '$d["jobId"]' | tr -d '"')
@@ -149,6 +187,34 @@ SECOND=$(h sync "$FEED_ID")
 wait "$FIRST_PID"
 check "second sync is rejected while locked" "$(field "$SECOND" '$d["locked"] ?? false')" true
 check "first sync completes" "$(field "$(cat "$WORK/first")" '$d["skipped"]')" false
+h set "$FEED_ID" feedUrl "http://127.0.0.1:$PORT/feed.ics" >/dev/null
+
+echo "errors back off"
+h set "$FEED_ID" feedUrl "http://127.0.0.1:$PORT/missing.ics" >/dev/null
+R=$(h sync "$FEED_ID")
+check "404 is an error" "$(field "$R" '[$d["status"], $d["errors"]]')" '[1,1]'
+check "next attempt scheduled" "$(field "$(h state "$FEED_ID")" '$d["nextAttemptAt"] !== null')" true
+h set "$FEED_ID" lastSyncedAgo 7200 >/dev/null
+BEFORE=$(field "$(h lastsync "$FEED_ID")" '$d["lastSyncedAt"]')
+h set "$FEED_ID" nextAttemptAt 3600 >/dev/null
+occ background-job:execute "$JOB" --force-execute >/dev/null
+check "job waits for the backoff" "$(field "$(h lastsync "$FEED_ID")" '$d["lastSyncedAt"]')" "$BEFORE"
+h set "$FEED_ID" feedUrl "http://127.0.0.1:$PORT/feed.ics" >/dev/null
+check "recovery clears the error" "$(field "$(h sync "$FEED_ID")" '[$d["status"], $d["errors"]]')" '[0,0]'
+check "and the backoff" "$(field "$(h state "$FEED_ID")" '$d["nextAttemptAt"]')" null
+
+echo "calendar properties and self-healing"
+h rename "$FEED_ID" "CB-E2E renamed" "#ff0000" >/dev/null
+check "relay calendar renamed and recoloured" "$(field "$(h calendar "$FEED_ID")" '[$d["name"], $d["color"]]')" '["CB-E2E renamed","#ff0000"]'
+OLD_CAL=$(field "$(h calendar "$FEED_ID")" '$d["id"]')
+h dropcalendar "$FEED_ID" >/dev/null
+R=$(h sync "$FEED_ID")
+check "missing calendar is recreated" "$(field "$R" '[$d["added"], $d["calendarId"] !== '"$OLD_CAL"']')" '[3,true]'
+check "and shared again" "$(field "$(h shares "$FEED_ID")" 'count($d)')" 1
+
+echo "occ"
+occ_rc calendarbridge:check; check "check is healthy" "$?" 0
+check "list shows the feed" "$(occ calendarbridge:list | grep -c "CB-E2E renamed")" 1
 
 echo
 if [ "$FAILED" -eq 0 ]; then echo "ALL SCENARIOS PASSED"; else echo "$FAILED CHECK(S) FAILED"; fi

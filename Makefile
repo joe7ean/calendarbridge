@@ -33,7 +33,7 @@ RSYNC_EXCLUDE = \
 	--exclude=phpunit.xml \
 	--exclude='*.log'
 
-.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test e2e version-check clean composer-prod release release-clean
+.PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test e2e e2e-matrix version-check clean composer-prod release release-clean
 
 help:
 	@echo ""
@@ -121,6 +121,11 @@ e2e:
 	ssh $(NC_HOST) 'rm -rf $(E2E_DIR)'
 	scp -rq tests/e2e $(NC_HOST):$(E2E_DIR)
 	ssh $(NC_HOST) 'chmod -R a+rX $(E2E_DIR) && cd /tmp && NC_ROOT=$(NC_ROOT) PHP=$(NC_PHP) sh $(E2E_DIR)/run.sh'
+
+# Same scenarios against throw-away Nextcloud containers of every supported major.
+E2E_VERSIONS ?= 32 33 34 35
+e2e-matrix: release
+	@for v in $(E2E_VERSIONS); do bash tests/e2e/container.sh $$v || exit 1; done
 
 version-check:
 	@pkg=$$(sed -n -E 's/^  "version": "([^"]*)".*/\1/p' package.json | head -1); \

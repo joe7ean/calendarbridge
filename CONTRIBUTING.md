@@ -59,6 +59,8 @@ Every release goes through three stages ([ADR 0013](docs/adr/0013-staged-rollout
 
 1. `composer test` is green.
 2. `make deploy` (or the tarball), then `make e2e` → `ALL SCENARIOS PASSED`.
+   `make e2e-matrix` runs the same scenarios in Nextcloud containers of every supported
+   major (needs podman or docker; `ENGINE=docker` to switch).
 3. Check the Nextcloud log for warnings or errors from `calendarbridge`.
 
 **Stage 2 – production instance, test scope**
