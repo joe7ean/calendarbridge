@@ -202,7 +202,7 @@ ICS;
         $feed = str_replace('DTSTAMP:20260101T000000Z', 'DTSTAMP:20260301T000000Z', self::SERIES);
         $stats = $this->service($calDav)->syncEvents(1, Reader::read($feed));
 
-        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0], $stats);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'held' => 0], $stats);
     }
 
     public function testChangedOverrideUpdatesTheSeriesObject(): void {
@@ -242,6 +242,43 @@ ICS;
         $stats = $this->service($calDav)->syncEvents(1, Reader::read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"));
 
         self::assertSame(1, $stats['deleted']);
+    }
+
+    public function testDeletionsAreHeldWhenNotApproved(): void {
+        $stored = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:removed@example\r\n"
+            . "DTSTART:20200101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        $calDav = $this->calDavWith(['removed@example.ics' => $stored]);
+        $calDav->expects(self::never())->method('deleteCalendarObject');
+
+        $asked = null;
+        $stats = $this->service($calDav)->syncEvents(
+            1,
+            Reader::read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"),
+            function (int $toDelete, int $existing) use (&$asked): bool {
+                $asked = [$toDelete, $existing];
+                return false;
+            },
+        );
+
+        self::assertSame([1, 1], $asked);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'held' => 1], $stats);
+    }
+
+    public function testAdditionsAreAppliedEvenWhileDeletionsAreHeld(): void {
+        $stored = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:old@example\r\n"
+            . "DTSTART:20200101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        $calDav = $this->calDavWith(['old@example.ics' => $stored]);
+        $calDav->expects(self::once())->method('createCalendarObject');
+        $calDav->expects(self::never())->method('deleteCalendarObject');
+
+        $stats = $this->service($calDav)->syncEvents(
+            1,
+            Reader::read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:new@example\r\nDTSTART:20260101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"),
+            static fn (): bool => false,
+        );
+
+        self::assertSame(1, $stats['added']);
+        self::assertSame(1, $stats['held']);
     }
 
     public function testTrashedObjectsArePurgedBeforeSync(): void {
@@ -285,6 +322,6 @@ ICS;
 
         $stats = $this->service($calDav)->syncEvents(1, Reader::read($feed));
 
-        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0], $stats);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'held' => 0], $stats);
     }
 }

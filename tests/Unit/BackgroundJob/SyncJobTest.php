@@ -92,6 +92,24 @@ class SyncJobTest extends TestCase {
         $this->runJob($this->job(7200), ['feedId' => 7]);
     }
 
+    public function testBackoffDelaysTheNextAttempt(): void {
+        $feed = $this->feed(900, 3600);
+        $feed->setNextAttemptAt(new \DateTime('@' . (self::NOW + 1800)));
+        $this->feedMapper->method('findById')->willReturn($feed);
+        $this->syncService->expects(self::never())->method('syncFeed');
+
+        $this->runJob($this->job(), ['feedId' => 7]);
+    }
+
+    public function testFeedIsRetriedOnceTheBackoffHasPassed(): void {
+        $feed = $this->feed(900, 3600);
+        $feed->setNextAttemptAt(new \DateTime('@' . (self::NOW - 10)));
+        $this->feedMapper->method('findById')->willReturn($feed);
+        $this->syncService->expects(self::once())->method('syncFeed');
+
+        $this->runJob($this->job(), ['feedId' => 7]);
+    }
+
     public function testJobOfDeletedFeedRemovesItself(): void {
         $this->feedMapper->method('findById')->willThrowException(new DoesNotExistException('gone'));
         $this->syncService->expects(self::never())->method('syncFeed');

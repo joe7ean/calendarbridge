@@ -9,6 +9,7 @@ use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCP\IGroupManager;
 use Psr\Log\LoggerInterface;
+use Sabre\DAV\PropPatch;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Property;
@@ -35,24 +36,33 @@ class CalendarService {
     // -------------------------------------------------------------------------
 
     /**
-     * Ensure a relay calendar exists for the given service user.
-     * Creates it if absent, returns the existing calendar ID otherwise.
+     * Return the relay calendar ID, creating the calendar when it does not exist
+     * (first sync) or no longer exists (deleted outside the app, or owned by
+     * another user after the service user changed).
+     *
+     * Calendars are identified by ID only. Adopting an existing calendar by its
+     * display name could merge two feeds into one calendar.
      */
-    public function ensureCalendarExists(
+    public function ensureCalendar(
+        ?int $calendarId,
         string $serviceUser,
         string $calendarName,
         string $color,
     ): int {
-        $principal = "principals/users/{$serviceUser}";
+        $principal = self::USER_PRINCIPAL_PREFIX . $serviceUser;
 
-        // Check existing calendars
-        foreach ($this->calDavBackend->getCalendarsForUser($principal) as $cal) {
-            if (($cal['{DAV:}displayname'] ?? '') === $calendarName) {
-                return (int)$cal['id'];
+        if ($calendarId !== null) {
+            $calendar = $this->calDavBackend->getCalendarById($calendarId);
+            // principaluri may come back as principals/users/<uid> or principals/<uid>.
+            if ($calendar !== null && str_ends_with((string)($calendar['principaluri'] ?? ''), '/' . $serviceUser)) {
+                return $calendarId;
             }
+            $this->logger->warning('CalendarBridge: relay calendar missing, creating a new one', [
+                'calendarId'  => $calendarId,
+                'serviceUser' => $serviceUser,
+            ]);
         }
 
-        // Create new relay calendar
         $calendarId = $this->calDavBackend->createCalendar($principal, $this->generateUri($calendarName), [
             '{DAV:}displayname'                         => $calendarName,
             '{http://apple.com/ns/ical/}calendar-color' => $color,
@@ -66,6 +76,18 @@ class CalendarService {
         ]);
 
         return (int)$calendarId;
+    }
+
+    /**
+     * Apply a changed feed name or colour to the relay calendar.
+     */
+    public function updateCalendarProperties(int $calendarId, string $calendarName, string $color): void {
+        $propPatch = new PropPatch([
+            '{DAV:}displayname'                         => $calendarName,
+            '{http://apple.com/ns/ical/}calendar-color' => $color,
+        ]);
+        $this->calDavBackend->updateCalendar($calendarId, $propPatch);
+        $propPatch->commit();
     }
 
     /**
@@ -94,9 +116,14 @@ class CalendarService {
      * All VEVENTs sharing a UID (a recurring master plus its RECURRENCE-ID
      * overrides) form one calendar object, as CalDAV requires.
      *
-     * @return array{added: int, updated: int, deleted: int}
+     * Additions and updates are always applied. Deletions are applied only if
+     * $approveDeletes (called with the number of objects to delete and the number
+     * of existing objects) returns true; otherwise they are counted as held.
+     *
+     * @param (callable(int $toDelete, int $existing): bool)|null $approveDeletes
+     * @return array{added: int, updated: int, deleted: int, held: int}
      */
-    public function syncEvents(int $calendarId, VCalendar $calendar): array {
+    public function syncEvents(int $calendarId, VCalendar $calendar, ?callable $approveDeletes = null): array {
         $added   = 0;
         $updated = 0;
         $deleted = 0;
@@ -155,19 +182,21 @@ class CalendarService {
 
         // Delete objects no longer present in the feed. Permanently: a trashed
         // object would block re-creating the same UID later (ADR 0009).
-        foreach ($existing as $uid => $obj) {
-            if (!isset($seen[$uid])) {
-                $this->calDavBackend->deleteCalendarObject(
-                    $calendarId,
-                    $obj['uri'],
-                    CalDavBackend::CALENDAR_TYPE_CALENDAR,
-                    true,
-                );
-                $deleted++;
-            }
+        $toDelete = array_diff_key($existing, $seen);
+        if ($toDelete !== [] && $approveDeletes !== null && !$approveDeletes(count($toDelete), count($existing))) {
+            return ['added' => $added, 'updated' => $updated, 'deleted' => 0, 'held' => count($toDelete)];
+        }
+        foreach ($toDelete as $obj) {
+            $this->calDavBackend->deleteCalendarObject(
+                $calendarId,
+                $obj['uri'],
+                CalDavBackend::CALENDAR_TYPE_CALENDAR,
+                true,
+            );
+            $deleted++;
         }
 
-        return ['added' => $added, 'updated' => $updated, 'deleted' => $deleted];
+        return ['added' => $added, 'updated' => $updated, 'deleted' => $deleted, 'held' => 0];
     }
 
     // -------------------------------------------------------------------------

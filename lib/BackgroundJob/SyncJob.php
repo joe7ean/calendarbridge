@@ -74,9 +74,15 @@ class SyncJob extends TimedJob {
 
         $minInterval = $this->appConfig->getValueInt(Application::APP_ID, 'min_sync_interval', self::MIN_INTERVAL);
         $interval = max(self::MIN_INTERVAL, $minInterval, $feed->getSyncInterval());
+        $now = $this->time->getTime();
         $lastSynced = $feed->getLastSyncedAt();
-        if ($lastSynced !== null
-            && $this->time->getTime() - $lastSynced->getTimestamp() < $interval - self::SLACK) {
+        if ($lastSynced !== null && $now - $lastSynced->getTimestamp() < $interval - self::SLACK) {
+            return;
+        }
+
+        // Error backoff and Retry-After (set by SyncService after a failed sync)
+        $nextAttempt = $feed->getNextAttemptAt();
+        if ($nextAttempt !== null && $now < $nextAttempt->getTimestamp() - self::SLACK) {
             return;
         }
 

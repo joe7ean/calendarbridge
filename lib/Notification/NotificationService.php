@@ -22,6 +22,30 @@ class NotificationService {
      * Send a notification to all admin users when a feed has persistent errors.
      */
     public function notifyFeedError(Feed $feed): void {
+        $this->notifyAdmins($feed, 'feed_error', [
+            'feedName'          => $feed->getFeedName(),
+            'consecutiveErrors' => $feed->getConsecutiveErrors(),
+            // Only technical error info — no event content
+            'error'             => $feed->getLastError() ?? 'Unknown error',
+        ]);
+    }
+
+    /**
+     * Tell admins that deletions of a feed are held in quarantine (ADR 0012).
+     */
+    public function notifyQuarantine(Feed $feed): void {
+        $this->notifyAdmins($feed, 'feed_quarantine', [
+            'feedName' => $feed->getFeedName(),
+            'reason'   => $feed->getQuarantineReason(),
+            'held'     => $feed->getQuarantineHeld(),
+        ]);
+    }
+
+    public function dismissQuarantine(int $feedId): void {
+        $this->dismiss($feedId, 'feed_quarantine');
+    }
+
+    private function notifyAdmins(Feed $feed, string $subject, array $parameters): void {
         $adminGroup = $this->groupManager->get('admin');
         if ($adminGroup === null) {
             return;
@@ -35,18 +59,14 @@ class NotificationService {
                     ->setUser($admin->getUID())
                     ->setDateTime(new \DateTime())
                     ->setObject('feed', (string)$feed->getId())
-                    ->setSubject('feed_error', [
-                        'feedName'         => $feed->getFeedName(),
-                        'consecutiveErrors' => $feed->getConsecutiveErrors(),
-                        // Only technical error info — no event content
-                        'error'            => $feed->getLastError() ?? 'Unknown error',
-                    ]);
+                    ->setSubject($subject, $parameters);
 
                 $this->notificationManager->notify($notification);
             } catch (\Exception $e) {
-                $this->logger->warning('CalendarBridge: failed to send error notification', [
-                    'admin' => $admin->getUID(),
-                    'error' => $e->getMessage(),
+                $this->logger->warning('CalendarBridge: failed to send notification', [
+                    'admin'   => $admin->getUID(),
+                    'subject' => $subject,
+                    'error'   => $e->getMessage(),
                 ]);
             }
         }
@@ -56,11 +76,15 @@ class NotificationService {
      * Dismiss all error notifications for a feed (called after successful sync).
      */
     public function dismissFeedErrors(int $feedId): void {
+        $this->dismiss($feedId, 'feed_error');
+    }
+
+    private function dismiss(int $feedId, string $subject): void {
         $notification = $this->notificationManager->createNotification();
         $notification
             ->setApp(Application::APP_ID)
             ->setObject('feed', (string)$feedId)
-            ->setSubject('feed_error');
+            ->setSubject($subject);
 
         $this->notificationManager->markProcessed($notification);
     }

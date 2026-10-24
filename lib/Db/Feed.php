@@ -44,6 +44,22 @@ use OCP\AppFramework\Db\Entity;
  * @method void   setVerifySsl(int $verifySsl)
  * @method int    getActive()
  * @method void   setActive(int $active)
+ * @method string|null getLastModified()
+ * @method void   setLastModified(?string $lastModified)
+ * @method \DateTime|null getNextAttemptAt()
+ * @method void   setNextAttemptAt(?\DateTime $nextAttemptAt)
+ * @method \DateTime|null getQuarantineSince()
+ * @method void   setQuarantineSince(?\DateTime $quarantineSince)
+ * @method int    getQuarantineCount()
+ * @method void   setQuarantineCount(int $quarantineCount)
+ * @method string|null getQuarantineHash()
+ * @method void   setQuarantineHash(?string $quarantineHash)
+ * @method string|null getQuarantineReason()
+ * @method void   setQuarantineReason(?string $quarantineReason)
+ * @method int    getQuarantineHeld()
+ * @method void   setQuarantineHeld(int $quarantineHeld)
+ * @method string|null getRejectedHash()
+ * @method void   setRejectedHash(?string $rejectedHash)
  */
 class Feed extends Entity {
     protected string $feedUrl = '';
@@ -64,6 +80,18 @@ class Feed extends Entity {
     protected ?string $httpAuthPass = null;
     protected int $verifySsl = 1;
     protected int $active = 1;
+    protected ?string $lastModified = null;
+    protected ?\DateTime $nextAttemptAt = null;
+    protected ?\DateTime $quarantineSince = null;
+    protected int $quarantineCount = 0;
+    protected ?string $quarantineHash = null;
+    protected ?string $quarantineReason = null;
+    protected int $quarantineHeld = 0;
+    protected ?string $rejectedHash = null;
+
+    public const STATUS_OK = 0;
+    public const STATUS_ERROR = 1;
+    public const STATUS_QUARANTINE = 3;
 
     public function __construct() {
         $this->addType('calendarId', 'integer');
@@ -75,6 +103,23 @@ class Feed extends Entity {
         $this->addType('stripAttendees', 'integer');
         $this->addType('verifySsl', 'integer');
         $this->addType('active', 'integer');
+        $this->addType('nextAttemptAt', 'datetime');
+        $this->addType('quarantineSince', 'datetime');
+        $this->addType('quarantineCount', 'integer');
+        $this->addType('quarantineHeld', 'integer');
+    }
+
+    public function isInQuarantine(): bool {
+        return $this->quarantineHash !== null;
+    }
+
+    public function clearQuarantine(): void {
+        $this->setQuarantineSince(null);
+        $this->setQuarantineCount(0);
+        $this->setQuarantineHash(null);
+        $this->setQuarantineReason(null);
+        $this->setQuarantineHeld(0);
+        $this->setRejectedHash(null);
     }
 
     public function isStripAttendees(): bool {
@@ -120,6 +165,14 @@ class Feed extends Entity {
             'hasHttpAuth'     => $this->httpAuthPass !== null,
             'verifySsl'       => (bool)$this->verifySsl,
             'active'          => (bool)$this->active,
+            'nextAttemptAt'   => $this->nextAttemptAt?->format(\DateTime::ATOM),
+            'quarantine'      => $this->quarantineHash === null ? null : [
+                'since'    => $this->quarantineSince?->format(\DateTime::ATOM),
+                'reason'   => $this->quarantineReason,
+                'held'     => $this->quarantineHeld,
+                'seen'     => $this->quarantineCount,
+                'rejected' => $this->rejectedHash !== null && $this->rejectedHash === $this->quarantineHash,
+            ],
         ];
     }
 }
