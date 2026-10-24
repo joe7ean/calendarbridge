@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Notifications link to the admin settings and use `UnknownNotificationException` for
   unknown subjects.
 
+### Fixed
+
+- **Feeds stopped syncing for good after the app had been disabled**, e.g. for a
+  Nextcloud major upgrade. Cron deletes the jobs of a disabled app, and re-enabling it did
+  not restore them. The app now re-registers missing jobs on its own (at most an hour
+  after it is enabled, and immediately on upgrade); see
+  [ADR 0014](docs/adr/0014-self-healing-job-registration.md).
+
 ### Security
 
 - **Redirects bypassed the SSRF protection.** The app's own `allow_redirects` option

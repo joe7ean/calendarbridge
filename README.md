@@ -115,6 +115,11 @@ afterwards — if `apps/calendarbridge/` is gone, unpack the tarball again befor
 enabling. Also check that `max-version` in `appinfo/info.xml` covers the new Nextcloud
 release.
 
+While the app is disabled, Nextcloud's cron deletes its background jobs. Since 0.3.0 the
+app re-registers them by itself within an hour of being enabled again
+([ADR 0014](docs/adr/0014-self-healing-job-registration.md)). Afterwards,
+`occ calendarbridge:check` should report no missing jobs.
+
 ## Setup
 
 `occ` must run as the user that owns the Nextcloud installation, typically
