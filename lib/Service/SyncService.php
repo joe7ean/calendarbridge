@@ -9,6 +9,7 @@ use OCA\CalendarBridge\Db\FeedMapper;
 use OCA\CalendarBridge\Notification\NotificationService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Utility\ITimeFactory;
+use OCP\IUserManager;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 use OCP\Security\ICrypto;
@@ -31,6 +32,7 @@ class SyncService {
         private readonly ICrypto $crypto,
         private readonly ILockingProvider $lockingProvider,
         private readonly ITimeFactory $time,
+        private readonly IUserManager $userManager,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -91,6 +93,13 @@ class SyncService {
         }
 
         try {
+            if (!$this->userManager->userExists($feed->getServiceUser())) {
+                throw new FeedFetchException(sprintf(
+                    'Service user "%s" does not exist; choose another one in the feed settings.',
+                    $feed->getServiceUser(),
+                ));
+            }
+
             $authPass = null;
             if ($feed->getHttpAuthPass() !== null) {
                 try {

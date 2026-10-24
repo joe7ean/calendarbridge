@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moves the feed to a new relay calendar of that user. Changing the URL resets the HTTP
   validators and any quarantine.
 - Re-activating a paused feed resets its error counter.
+- A deleted service user is reported as a clear sync error instead of an unexpected one.
 - The relay calendar is identified by its ID only. A calendar deleted outside the app is
   recreated; a calendar is no longer adopted by its display name.
 - Notifications link to the admin settings and use `UnknownNotificationException` for

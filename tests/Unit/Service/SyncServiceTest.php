@@ -14,6 +14,7 @@ use OCA\CalendarBridge\Service\Quarantine;
 use OCA\CalendarBridge\Service\SyncService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IAppConfig;
+use OCP\IUserManager;
 use OCP\Lock\ILockingProvider;
 use OCP\Lock\LockedException;
 use OCP\Security\ICrypto;
@@ -31,6 +32,7 @@ class SyncServiceTest extends TestCase {
     private NotificationService&MockObject $notifications;
     private ICrypto&MockObject $crypto;
     private ILockingProvider&MockObject $lockingProvider;
+    private IUserManager&MockObject $userManager;
     private Feed $feed;
 
     protected function setUp(): void {
@@ -41,6 +43,8 @@ class SyncServiceTest extends TestCase {
         $this->notifications   = $this->createMock(NotificationService::class);
         $this->crypto          = $this->createMock(ICrypto::class);
         $this->lockingProvider = $this->createMock(ILockingProvider::class);
+        $this->userManager     = $this->createMock(IUserManager::class);
+        $this->userManager->method('userExists')->willReturn(true);
 
         $this->feed = new Feed();
         $this->feed->setId(42);
@@ -68,8 +72,20 @@ class SyncServiceTest extends TestCase {
             $this->crypto,
             $this->lockingProvider,
             $time,
+            $this->userManager,
             $this->createMock(LoggerInterface::class),
         );
+    }
+
+    public function testMissingServiceUserIsAClearError(): void {
+        $this->userManager = $this->createMock(IUserManager::class);
+        $this->userManager->method('userExists')->willReturn(false);
+        $this->feedService->expects(self::never())->method('fetch');
+
+        $this->service()->syncFeed(42);
+
+        self::assertSame(Feed::STATUS_ERROR, $this->feed->getLastStatus());
+        self::assertStringContainsString('Service user "calendar-service" does not exist', (string)$this->feed->getLastError());
     }
 
     private function feedReturns(string $ics, ?string $etag = 'etag'): void {
