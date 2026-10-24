@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\AppInfo;
 
 use OCA\CalendarBridge\Notification\Notifier;
+use OCA\CalendarBridge\SetupCheck\FeedHealthCheck;
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -22,6 +23,9 @@ class Application extends App implements IBootstrap {
     public function register(IRegistrationContext $context): void {
         // Register the notifier for admin error notifications
         $context->registerNotifierService(Notifier::class);
+
+        // Feed health in Administration → Overview
+        $context->registerSetupCheck(FeedHealthCheck::class);
 
         // CalDavBackend is an internal NC class — wire it explicitly
         // so it's available for injection in our services. Resolved from the
