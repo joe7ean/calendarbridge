@@ -33,6 +33,7 @@ class SyncServiceTest extends TestCase {
     private ICrypto&MockObject $crypto;
     private ILockingProvider&MockObject $lockingProvider;
     private IUserManager&MockObject $userManager;
+    private \OCA\CalendarBridge\Activity\ActivityService&MockObject $activities;
     private Feed $feed;
 
     protected function setUp(): void {
@@ -44,6 +45,7 @@ class SyncServiceTest extends TestCase {
         $this->crypto          = $this->createMock(ICrypto::class);
         $this->lockingProvider = $this->createMock(ILockingProvider::class);
         $this->userManager     = $this->createMock(IUserManager::class);
+        $this->activities = $this->createMock(\OCA\CalendarBridge\Activity\ActivityService::class);
         $this->userManager->method('userExists')->willReturn(true);
 
         $this->feed = new Feed();
@@ -74,6 +76,7 @@ class SyncServiceTest extends TestCase {
             $time,
             $this->userManager,
             $this->createMock(LoggerInterface::class),
+            $this->activities,
         );
     }
 
@@ -145,6 +148,26 @@ class SyncServiceTest extends TestCase {
 
         self::assertFalse($this->feed->isInQuarantine());
         self::assertSame(Feed::STATUS_OK, $this->feed->getLastStatus());
+    }
+
+    public function testOnlyTheSameSuspiciousResultIsReportedAsApproved(): void {
+        $this->feed->setQuarantineHash(Quarantine::hashUids([]));
+        $this->feedReturns("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n");
+        $this->relayDeletes(5, 5);
+        $this->activities->expects(self::once())->method('success')->with(
+            $this->feed, self::anything(), true, true, true,
+        );
+        $this->service()->syncFeed(42, true);
+    }
+
+    public function testChangedNonSuspiciousSourceIsNotReportedAsAdminApproval(): void {
+        $this->feed->setQuarantineHash('previous-result');
+        $this->feedReturns("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART:20260101T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        $this->relayDeletes(1, 10);
+        $this->activities->expects(self::once())->method('success')->with(
+            $this->feed, self::anything(), true, true, false,
+        );
+        $this->service()->syncFeed(42, true);
     }
 
     public function testEventsWithoutAnyUidFailTheSync(): void {

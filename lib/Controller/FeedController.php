@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\Controller;
 
 use OCA\CalendarBridge\AppInfo\Application;
+use OCA\CalendarBridge\Activity\ActivityService;
 use OCA\CalendarBridge\BackgroundJob\SyncJob;
 use OCA\CalendarBridge\Db\Feed;
 use OCA\CalendarBridge\Db\FeedMapper;
@@ -38,6 +39,7 @@ class FeedController extends Controller {
         private readonly IL10N $l,
         private readonly IUserManager $userManager,
         private readonly IGroupManager $groupManager,
+        private readonly ActivityService $activities,
     ) {
         parent::__construct(Application::APP_ID, $request);
     }
@@ -156,6 +158,7 @@ class FeedController extends Controller {
         $propertiesChanged = ($feedName !== null && $feedName !== $feed->getFeedName())
             || ($calendarColor !== null && $calendarColor !== $feed->getCalendarColor());
         $reactivated       = $active === true && !$feed->isActive();
+        $stopped           = $active === false && $feed->isActive();
 
         if ($feedUrl !== null)       $feed->setFeedUrl($feedUrl);
         if ($feedName !== null)      $feed->setFeedName($feedName);
@@ -210,6 +213,11 @@ class FeedController extends Controller {
             $this->calendarService->shareWithGroups($feed->getCalendarId(), $feed->getTargetGroupsArray());
         }
 
+        if ($stopped) {
+            $this->activities->stopped($feed);
+            $this->feedMapper->update($feed);
+        }
+
         return new DataResponse($feed->toApiArray());
     }
 
@@ -220,6 +228,8 @@ class FeedController extends Controller {
         } catch (DoesNotExistException) {
             return new DataResponse(['error' => 'Feed not found'], Http::STATUS_NOT_FOUND);
         }
+
+        $this->activities->stopped($feed);
 
         // Delete the relay calendar and all its events
         if ($feed->getCalendarId() !== null) {

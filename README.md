@@ -170,6 +170,35 @@ The Calendar Bridge Admin Panel UI:
 
 ## Operation
 
+### Activities and notification privacy (0.4.0 development)
+
+Relay item changes no longer generate DAV activities containing appointment titles.
+Instead, Calendar Bridge collects applied additions, updates and removals for 24 hours
+and publishes one count-only summary per changed feed in the activity stream. A recurring
+series counts as one calendar object. No changes means no summary. The activity job
+runs every 15 minutes, independently of feed synchronization and backoff; use system cron.
+The calendar name is resolved only for current group members when displaying the stream;
+stored activity parameters contain no names or appointment details.
+
+Quarantine entry, approved removals (administrator versus automatic checks), recovery
+after an announced outage, and administrative pause/removal produce one status activity.
+An outage is announced after at least three failures and a day since the first failure,
+including feeds automatically paused after repeated failures. Absence from a feed is
+described as removal, not proof of cancellation.
+
+Summaries/status activities cannot be emailed or generate automatic activity push.
+Only exceptional state changes produce a separate, neutral notification: sign in to
+Nextcloud to read the activity stream. Admin error/quarantine notifications likewise
+omit calendar names, URLs and raw errors; admins find the details in Calendar Bridge
+settings. Forwarding these notifications does not disclose appointment content.
+No SMTP configuration or personal settings for other calendars are changed.
+
+This does not remove old DAV activities or queued emails, and does not control
+separately configured calendar reminders, webhooks or third-party integrations.
+For the additive migration and safe code rollback, see
+[ADR 0015](docs/adr/0015-private-activity-summaries.md). This development change has
+not been deployed to production.
+
 ### Quarantine
 
 If a feed suddenly returns no events, or would remove at least half of the relay

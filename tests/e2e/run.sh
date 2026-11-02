@@ -97,6 +97,11 @@ echo "feed $FEED_ID"
 echo "initial sync"
 R=$(h sync "$FEED_ID")
 check "3 objects added" "$(field "$R" '$d["added"]')" 3
+echo "activity privacy"
+P=$(h privacy "$FEED_ID")
+for key in decorated initialCalendarSilent relaySilent otherCalendarVisible otherListenersRun summaryCountsOnly storedCountsOnly summaryMailAndPushDisabled; do
+	check "$key" "$(field "$P" '$d["'"$key"'"]')" true
+done
 O=$(h objects "$FEED_ID")
 check "series stored as one object" "$(field "$O" '$d["cbtest-series-1.ics"]["vevents"]')" 3
 check "series keeps both overrides" "$(field "$O" '$d["cbtest-series-1.ics"]["overrides"]')" 2

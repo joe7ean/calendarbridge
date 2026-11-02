@@ -56,4 +56,12 @@ Features:
         <admin>OCA\CalendarBridge\Settings\AdminSettings</admin>
         <admin-section>OCA\CalendarBridge\Settings\AdminSection</admin-section>
     </settings>
+    <activity>
+        <settings>
+            <setting>OCA\CalendarBridge\Activity\Setting</setting>
+        </settings>
+        <providers>
+            <provider>OCA\CalendarBridge\Activity\Provider</provider>
+        </providers>
+    </activity>
 </info>

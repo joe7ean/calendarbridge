@@ -32,6 +32,68 @@ $out = static function (mixed $data): void {
 };
 
 switch ($argv[1] ?? '') {
+    case 'privacy': // privacy <feedId>: exercise real DAV listeners and consumers
+        $feed = $mapper->findById((int)$argv[2]);
+        Server::get(\OCP\App\IAppManager::class)->loadApp('activity');
+        $manager = Server::get(\OCP\Activity\IManager::class);
+        $consumer = new class implements \OCP\Activity\IConsumer {
+            public array $events = [];
+            public function receive(\OCP\Activity\IEvent $event): void {
+                $this->events[] = [$event->getApp(), $event->getSubject(), $event->getSubjectParameters()];
+            }
+        };
+        $manager->registerConsumer(static fn () => $consumer);
+        $temporary = Server::get(CalendarService::class)->ensureCalendar(null, $feed->getServiceUser(), 'Private calendar name', '#0082c9');
+        Server::get(CalendarService::class)->deleteCalendar($temporary);
+        $creationSilent = $consumer->events === [];
+        $listenerCalls = 0;
+        Server::get(\OCP\EventDispatcher\IEventDispatcher::class)->addListener(
+            \OCP\Calendar\Events\CalendarObjectCreatedEvent::class,
+            static function () use (&$listenerCalls): void { $listenerCalls++; },
+            -100,
+        );
+        $ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:cb-privacy-test\r\nDTSTART:20270101T120000Z\r\nSUMMARY:PRIVATE-CONTENT-MUST-NOT-LEAK\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        $calDav->createCalendarObject($feed->getCalendarId(), 'cb-privacy-test.ics', $ics);
+        $calDav->deleteCalendarObject($feed->getCalendarId(), 'cb-privacy-test.ics', 0, true);
+        $relaySilent = $consumer->events === [];
+        $control = $calDav->createCalendar('principals/users/' . $feed->getServiceUser(), 'cb-privacy-control', ['{DAV:}displayname' => 'Control']);
+        $calDav->createCalendarObject($control, 'test.ics', $ics);
+        $normalVisible = count($consumer->events) > 0;
+        $calDav->deleteCalendar($control, true);
+        $group = Server::get(\OCP\IGroupManager::class)->get($feed->getTargetGroupsArray()[0]);
+        $user = Server::get(\OCP\IUserManager::class)->get($feed->getServiceUser());
+        $wasMember = $group->inGroup($user);
+        $group->addUser($user);
+        try {
+            $consumer->events = [];
+            $copy = clone $feed;
+            $copy->setActivityState(json_encode(['since' => time() - 90000, 'added' => 2, 'updated' => 1, 'deleted' => 3]));
+            Server::get(\OCA\CalendarBridge\Activity\ActivityService::class)->flush($copy);
+            $summary = $consumer->events;
+            $qb = Server::get(IDBConnection::class)->getQueryBuilder();
+            $qb->select('subjectparams')->from('activity')
+                ->where($qb->expr()->eq('app', $qb->createNamedParameter('calendarbridge')))
+                ->andWhere($qb->expr()->eq('object_id', $qb->createNamedParameter($feed->getId())))
+                ->andWhere($qb->expr()->eq('subject', $qb->createNamedParameter('summary')));
+            $stored = $qb->executeQuery()->fetchOne();
+            $setting = $manager->getSettingById('calendarbridge_summary');
+            $deliveryDisabled = !$setting->isDefaultEnabledMail() && !$setting->canChangeMail()
+                && !$setting->isDefaultEnabledNotification() && !$setting->canChangeNotification();
+        } finally {
+            if (!$wasMember) { $group->removeUser($user); }
+        }
+        $out([
+            'decorated' => $manager instanceof \OCA\CalendarBridge\Activity\PrivacyManager,
+            'initialCalendarSilent' => $creationSilent,
+            'relaySilent' => $relaySilent,
+            'otherCalendarVisible' => $normalVisible,
+            'otherListenersRun' => $listenerCalls === 2,
+            'summaryCountsOnly' => count($summary) === 1 && $summary[0] === ['calendarbridge', 'summary', ['added' => 2, 'updated' => 1, 'deleted' => 3]],
+            'storedCountsOnly' => is_string($stored) && json_decode($stored, true) === ['added' => 2, 'updated' => 1, 'deleted' => 3],
+            'summaryMailAndPushDisabled' => $deliveryDisabled,
+        ]);
+        break;
+
     case 'create': // create <url> <name> <serviceUser> <group>
         $feed = new Feed();
         $feed->setFeedUrl($argv[2]);

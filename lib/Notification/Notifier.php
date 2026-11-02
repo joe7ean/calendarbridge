@@ -32,25 +32,14 @@ class Notifier implements INotifier {
         }
 
         $l = $this->l10nFactory->get(Application::APP_ID, $languageCode);
-        $params = $notification->getSubjectParameters();
-        $feedName = (string)($params['feedName'] ?? 'Unknown feed');
-
         switch ($notification->getSubject()) {
             case 'feed_error':
-                $errors = (int)($params['consecutiveErrors'] ?? 0);
-                $error  = (string)($params['error'] ?? '');
-                $subject = $l->t('Calendar Bridge: Feed "%s" has errors', [$feedName]);
-                $message = $errors >= 10
-                    ? $l->t('Feed "%s" was automatically paused after %d consecutive errors. Last error: %s', [$feedName, $errors, $error])
-                    : $l->t('Feed "%s" failed %d times in a row. Last error: %s', [$feedName, $errors, $error]);
-                break;
-
             case 'feed_quarantine':
-                $held = (int)($params['held'] ?? 0);
-                $subject = $l->t('Calendar Bridge: Changes to "%s" are on hold', [$feedName]);
-                $message = ($params['reason'] ?? '') === 'empty'
-                    ? $l->t('The feed "%s" is suddenly empty. Its %d events are kept until the feed stays empty for a day or you apply the change.', [$feedName, $held])
-                    : $l->t('The feed "%s" would remove %d events at once. They are kept until the result is confirmed for a day or you apply the change.', [$feedName, $held]);
+            case 'feed_notice':
+                // Ignore legacy parameters too: old stored notifications must
+                // not render names or technical errors into forwarded mail.
+                $subject = $l->t('Calendar Bridge: Important calendar status update');
+                $message = $l->t('There is an important status update for a subscribed calendar. Sign in to Nextcloud to view the details.');
                 break;
 
             default:
@@ -60,7 +49,9 @@ class Notifier implements INotifier {
         $notification
             ->setParsedSubject($subject)
             ->setParsedMessage($message)
-            ->setLink($this->urlGenerator->linkToRouteAbsolute('settings.AdminSettings.index', ['section' => Application::APP_ID]));
+            ->setLink($notification->getSubject() === 'feed_notice'
+                ? $this->urlGenerator->linkToRouteAbsolute('activity.Activities.showList')
+                : $this->urlGenerator->linkToRouteAbsolute('settings.AdminSettings.index', ['section' => Application::APP_ID]));
 
         return $notification;
     }

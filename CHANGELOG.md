@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persistent counter state for upcoming private activity reporting (development
   version 0.4.0-alpha.1), with an additive nullable migration and a matching Feed
   property retained when reverting the reporting behavior.
+- Privacy-preserving daily activity summaries and one-time status notices for relay
+  calendars (ADR 0015). DAV item activities are suppressed before storage/mail/push
+  consumers; other DAV listeners and calendars
+  are unaffected. Notifications, including admin notices, contain a generic sign-in
+  prompt only. Activity mail and automatic activity push are disabled for summaries.
+- An independent job flushes daily summaries and warns after at least three failures
+  spanning a day, including paused feeds. Quarantine entry, approval (administrator
+  versus automatic), recovery and administrative stop have distinct activity messages.
 - **Quarantine for suspicious feed results** ([ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md)).
   If a feed is suddenly empty, or would remove at least half of the events and at least
   10, the deletions are held while additions and changes still apply. They are applied

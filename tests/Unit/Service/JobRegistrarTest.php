@@ -43,7 +43,7 @@ class JobRegistrarTest extends TestCase {
 
     public function testMissingJobsAreRegisteredAgain(): void {
         $this->jobList->method('has')->willReturnCallback(
-            static fn ($class, $argument) => $argument['feedId'] === 1,
+            static fn ($class, $argument = null) => $argument === null || $argument['feedId'] === 1,
         );
         $this->jobList->expects(self::once())->method('add')->with(SyncJob::class, ['feedId' => 2]);
 
@@ -61,7 +61,7 @@ class JobRegistrarTest extends TestCase {
         $this->appConfig->method('getValueInt')->willReturn(0);
         $this->appConfig->expects(self::once())->method('setValueInt')->with('calendarbridge', 'jobs_checked_at', 10_000);
         $this->jobList->method('has')->willReturn(false);
-        $this->jobList->expects(self::exactly(2))->method('add');
+        $this->jobList->expects(self::exactly(3))->method('add');
 
         $this->registrar()->ensureJobsThrottled();
     }

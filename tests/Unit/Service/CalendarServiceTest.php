@@ -40,6 +40,7 @@ class CalendarServiceTest extends TestCase {
             $db,
             $this->createMock(IGroupManager::class),
             $this->createMock(LoggerInterface::class),
+            new \OCA\CalendarBridge\Activity\PrivacyScope(),
         );
     }
 

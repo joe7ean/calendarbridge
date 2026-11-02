@@ -6,6 +6,7 @@ namespace OCA\CalendarBridge\Service;
 
 use OCA\CalendarBridge\AppInfo\Application;
 use OCA\CalendarBridge\BackgroundJob\SyncJob;
+use OCA\CalendarBridge\BackgroundJob\ActivityJob;
 use OCA\CalendarBridge\Db\FeedMapper;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\IJobList;
@@ -51,6 +52,10 @@ class JobRegistrar {
      */
     public function ensureJobs(): int {
         $added = 0;
+        if (!$this->jobList->has(ActivityJob::class, null)) {
+            $this->jobList->add(ActivityJob::class);
+            $added++;
+        }
         foreach ($this->feedMapper->findAll() as $feed) {
             $argument = ['feedId' => $feed->getId()];
             if (!$this->jobList->has(SyncJob::class, $argument)) {

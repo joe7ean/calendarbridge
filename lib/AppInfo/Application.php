@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace OCA\CalendarBridge\AppInfo;
 
+use OCA\CalendarBridge\Activity\PrivacyManager;
+use OCA\CalendarBridge\Activity\PrivacyScope;
+use OCA\CalendarBridge\Db\FeedMapper;
 use OCA\CalendarBridge\Notification\Notifier;
 use OCA\CalendarBridge\Service\JobRegistrar;
 use OCA\CalendarBridge\SetupCheck\FeedHealthCheck;
 use OCA\DAV\CalDAV\CalDavBackend;
+use OCP\Activity\IManager as ActivityManager;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -38,6 +42,18 @@ class Application extends App implements IBootstrap {
     }
 
     public function boot(IBootContext $context): void {
+        // Install before DAV's lazy activity listener is resolved. Only public
+        // container/activity APIs are used; the original manager owns consumers.
+        $server = $context->getServerContainer();
+        $inner = $server->get(ActivityManager::class);
+        if (!$inner instanceof PrivacyManager) {
+            $privacy = new PrivacyManager(
+                $inner,
+                $context->getAppContainer()->get(FeedMapper::class),
+                $context->getAppContainer()->get(PrivacyScope::class),
+            );
+            $server->registerService(ActivityManager::class, static fn () => $privacy);
+        }
         // Self-healing: restore sync jobs that cron removed while the app was
         // disabled. Throttled to once per hour; must never break a request.
         try {

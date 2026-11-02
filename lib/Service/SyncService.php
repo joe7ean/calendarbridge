@@ -7,6 +7,7 @@ namespace OCA\CalendarBridge\Service;
 use OCA\CalendarBridge\Db\Feed;
 use OCA\CalendarBridge\Db\FeedMapper;
 use OCA\CalendarBridge\Notification\NotificationService;
+use OCA\CalendarBridge\Activity\ActivityService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\IUserManager;
@@ -34,6 +35,7 @@ class SyncService {
         private readonly ITimeFactory $time,
         private readonly IUserManager $userManager,
         private readonly LoggerInterface $logger,
+        private readonly ActivityService $activities,
     ) {
     }
 
@@ -92,6 +94,8 @@ class SyncService {
             return [...$this->emptyResult(0), 'skipped' => true];
         }
 
+        $wasQuarantined = $feed->isInQuarantine();
+
         try {
             if (!$this->userManager->userExists($feed->getServiceUser())) {
                 throw new FeedFetchException(sprintf(
@@ -138,6 +142,7 @@ class SyncService {
 
             if ($result['notModified']) {
                 $this->logger->debug('CalendarBridge: feed not modified (304)', ['feedId' => $feedId]);
+                $this->activities->success($feed, [], $wasQuarantined, false);
                 $this->markSuccess($feed, $result['etag'], $result['lastModified']);
                 return [...$this->emptyResult($startTime), 'skipped' => false];
             }
@@ -160,11 +165,15 @@ class SyncService {
             $incoming = count(array_unique($uids));
 
             $decision = null;
+            $heldResultApplied = false;
             $stats = $this->calendarService->syncEvents(
                 $calendarId,
                 $calendar,
-                function (int $toDelete, int $existing) use ($feed, $incoming, $hash, $applyQuarantine, &$decision): bool {
+                function (int $toDelete, int $existing) use ($feed, $incoming, $hash, $applyQuarantine, &$decision, &$heldResultApplied): bool {
+                    $heldResult = $feed->getQuarantineHash() === $hash
+                        && $this->quarantine->reason($existing, $toDelete, $incoming) !== null;
                     $decision = $this->quarantine->decide($feed, $existing, $toDelete, $incoming, $hash, $applyQuarantine);
+                    $heldResultApplied = $heldResult && $decision === Quarantine::APPLY;
                     return $decision === Quarantine::APPLY;
                 },
             );
@@ -180,6 +189,7 @@ class SyncService {
                 ...$stats,
             ]);
 
+            $this->activities->success($feed, $stats, $wasQuarantined, $applyQuarantine, $heldResultApplied);
             $this->markSuccess($feed, $result['etag'], $result['lastModified']);
 
             if ($decision === Quarantine::HOLD_NEW) {
@@ -252,6 +262,7 @@ class SyncService {
             ]);
         }
 
+        $this->activities->failure($feed);
         $this->feedMapper->update($feed);
 
         if ($errors === self::NOTIFY_AFTER_ERRORS || $errors === self::PAUSE_AFTER_ERRORS) {

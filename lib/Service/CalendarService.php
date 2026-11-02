@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\CalendarBridge\Service;
 
 use OCA\DAV\CalDAV\CalDavBackend;
+use OCA\CalendarBridge\Activity\PrivacyScope;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCP\IGroupManager;
@@ -28,6 +29,7 @@ class CalendarService {
         private readonly IDBConnection $db,
         private readonly IGroupManager $groupManager,
         private readonly LoggerInterface $logger,
+        private readonly PrivacyScope $privacy,
     ) {
     }
 
@@ -63,11 +65,11 @@ class CalendarService {
             ]);
         }
 
-        $calendarId = $this->calDavBackend->createCalendar($principal, $this->generateUri($calendarName), [
+        $calendarId = $this->privacy->run(fn () => $this->calDavBackend->createCalendar($principal, $this->generateUri($calendarName), [
             '{DAV:}displayname'                         => $calendarName,
             '{http://apple.com/ns/ical/}calendar-color' => $color,
             '{http://calendarserver.org/ns/}getctag'    => '',
-        ]);
+        ]));
 
         $this->logger->info('CalendarBridge: created relay calendar', [
             'serviceUser'  => $serviceUser,
@@ -86,8 +88,10 @@ class CalendarService {
             '{DAV:}displayname'                         => $calendarName,
             '{http://apple.com/ns/ical/}calendar-color' => $color,
         ]);
-        $this->calDavBackend->updateCalendar($calendarId, $propPatch);
-        $propPatch->commit();
+        $this->privacy->run(function () use ($calendarId, $propPatch): void {
+            $this->calDavBackend->updateCalendar($calendarId, $propPatch);
+            $propPatch->commit();
+        });
     }
 
     /**
@@ -97,7 +101,7 @@ class CalendarService {
         // Drop shares first so a failed delete cannot leave the calendar shared.
         $this->removeAllShares($calendarId);
         try {
-            $this->calDavBackend->deleteCalendar($calendarId, true);
+            $this->privacy->run(fn () => $this->calDavBackend->deleteCalendar($calendarId, true));
         } catch (\Exception $e) {
             $this->logger->warning('CalendarBridge: failed to delete calendar', [
                 'calendarId' => $calendarId,
@@ -124,6 +128,10 @@ class CalendarService {
      * @return array{added: int, updated: int, deleted: int, held: int}
      */
     public function syncEvents(int $calendarId, VCalendar $calendar, ?callable $approveDeletes = null): array {
+        return $this->privacy->run(fn () => $this->syncEventsPrivately($calendarId, $calendar, $approveDeletes));
+    }
+
+    private function syncEventsPrivately(int $calendarId, VCalendar $calendar, ?callable $approveDeletes): array {
         $added   = 0;
         $updated = 0;
         $deleted = 0;

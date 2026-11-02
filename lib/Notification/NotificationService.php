@@ -22,23 +22,31 @@ class NotificationService {
      * Send a notification to all admin users when a feed has persistent errors.
      */
     public function notifyFeedError(Feed $feed): void {
-        $this->notifyAdmins($feed, 'feed_error', [
-            'feedName'          => $feed->getFeedName(),
-            'consecutiveErrors' => $feed->getConsecutiveErrors(),
-            // Only technical error info — no event content
-            'error'             => $feed->getLastError() ?? 'Unknown error',
-        ]);
+        $this->notifyAdmins($feed, 'feed_error', []);
     }
 
     /**
      * Tell admins that deletions of a feed are held in quarantine (ADR 0012).
      */
     public function notifyQuarantine(Feed $feed): void {
-        $this->notifyAdmins($feed, 'feed_quarantine', [
-            'feedName' => $feed->getFeedName(),
-            'reason'   => $feed->getQuarantineReason(),
-            'held'     => $feed->getQuarantineHeld(),
-        ]);
+        $this->notifyAdmins($feed, 'feed_quarantine', []);
+    }
+
+    /** Safe even when another app forwards notifications to external mail/push. */
+    public function notifyStatus(Feed $feed, array $userIds): void {
+        foreach (array_unique($userIds) as $userId) {
+            try {
+                $notification = $this->notificationManager->createNotification();
+                $notification->setApp(Application::APP_ID)
+                    ->setUser($userId)
+                    ->setDateTime(new \DateTime())
+                    ->setObject('feed', (string)$feed->getId())
+                    ->setSubject('feed_notice');
+                $this->notificationManager->notify($notification);
+            } catch (\Exception $e) {
+                $this->logger->warning('CalendarBridge: status notification failed', ['feedId' => $feed->getId(), 'errorType' => $e::class]);
+            }
+        }
     }
 
     public function dismissQuarantine(int $feedId): void {
