@@ -62,6 +62,16 @@ use OCP\AppFramework\Db\Entity;
  * @method void   setRejectedHash(?string $rejectedHash)
  */
 class Feed extends Entity {
+    protected ?string $activityState = null;
+
+    public function getActivityState(): ?string {
+        return $this->activityState;
+    }
+
+    public function setActivityState(?string $state): void {
+        $this->setter('activityState', [$state]);
+    }
+
     protected string $feedUrl = '';
     protected string $feedName = '';
     protected ?string $calendarColor = '#0082c9';

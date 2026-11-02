@@ -128,12 +128,7 @@ e2e-matrix: release
 	@for v in $(E2E_VERSIONS); do bash tests/e2e/container.sh $$v || exit 1; done
 
 version-check:
-	@pkg=$$(sed -n -E 's/^  "version": "([^"]*)".*/\1/p' package.json | head -1); \
-	log=$$(sed -n -E 's/^## \[([0-9][0-9.]*)\].*/\1/p' CHANGELOG.md | head -1); \
-	echo "info.xml=$(RELEASE_VER) package.json=$$pkg CHANGELOG=$$log"; \
-	if [ "$(RELEASE_VER)" != "$$pkg" ] || [ "$(RELEASE_VER)" != "$$log" ]; then \
-		echo "Version mismatch" >&2; exit 1; \
-	fi
+	@node scripts/check-version.cjs
 
 clean:
 	rm -rf js/ css/ node_modules/

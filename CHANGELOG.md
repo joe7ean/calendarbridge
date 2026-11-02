@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Persistent counter state for upcoming private activity reporting (development
+  version 0.4.0-alpha.1), with an additive nullable migration and a matching Feed
+  property retained when reverting the reporting behavior.
 - **Quarantine for suspicious feed results** ([ADR 0012](docs/adr/0012-quarantine-suspicious-feed-results.md)).
   If a feed is suddenly empty, or would remove at least half of the events and at least
   10, the deletions are held while additions and changes still apply. They are applied
