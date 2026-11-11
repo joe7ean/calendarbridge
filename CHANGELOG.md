@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Persistent counter state for upcoming private activity reporting (development
-  version 0.4.0-alpha.1), with an additive nullable migration and a matching Feed
+- Persistent counter state for private activity reporting (development
+  version 0.4.0-beta.1), with an additive nullable migration and a matching Feed
   property retained when reverting the reporting behavior.
 - Privacy-preserving daily activity summaries and one-time status notices for relay
   calendars (ADR 0015). DAV item activities are suppressed before storage/mail/push

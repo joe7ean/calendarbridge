@@ -1,6 +1,6 @@
 # 0015. Replace relay item activities with private summaries and status transitions
 
-- Status: Accepted (0.4.0-alpha.1; local testing only)
+- Status: Accepted (0.4.0-beta.1)
 - Date: 2026-11-02
 
 ## Context

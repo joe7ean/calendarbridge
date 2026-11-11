@@ -1,6 +1,6 @@
 # 0016. Distinguish expired from removed events
 
-- Status: Accepted (0.4.0-alpha.1; local testing only)
+- Status: Accepted (0.4.0-beta.1)
 - Date: 2026-11-11
 
 ## Context

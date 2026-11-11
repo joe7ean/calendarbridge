@@ -25,5 +25,5 @@ does, so that neither humans nor agents "fix" a deliberate trade-off.
 | [0012](0012-quarantine-suspicious-feed-results.md) | Quarantine suspicious feed results instead of applying them | Accepted (0.3.0) |
 | [0013](0013-staged-rollout.md) | Staged rollout with pre-release tags | Accepted |
 | [0014](0014-self-healing-job-registration.md) | Self-healing registration of sync jobs | Accepted |
-| [0015](0015-private-activity-summaries.md) | Private activity summaries and status transitions | Accepted (0.4.0-alpha.1) |
-| [0016](0016-expired-versus-removed-events.md) | Distinguish expired from removed events | Accepted (0.4.0-alpha.1) |
+| [0015](0015-private-activity-summaries.md) | Private activity summaries and status transitions | Accepted (0.4.0-beta.1) |
+| [0016](0016-expired-versus-removed-events.md) | Distinguish expired from removed events | Accepted (0.4.0-beta.1) |
