@@ -71,7 +71,7 @@ class QuarantineCommand extends Command {
             ));
             return self::FAILURE;
         }
-        $output->writeln(sprintf('Applied: %d deleted.', $r['deleted']));
+        $output->writeln(sprintf('Applied: %d removed, %d expired.', $r['deleted'], $r['expired']));
         return self::SUCCESS;
     }
 }

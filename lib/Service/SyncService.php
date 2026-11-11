@@ -45,7 +45,7 @@ class SyncService {
      * immediately with skipped = locked = true.
      *
      * @param bool $applyQuarantine the admin applies the currently quarantined result
-     * @return array{added: int, updated: int, deleted: int, held: int, durationMs: int, skipped: bool, locked?: bool}
+     * @return array{added: int, updated: int, deleted: int, expired: int, held: int, durationMs: int, skipped: bool, locked?: bool}
      */
     public function syncFeed(int $feedId, bool $applyQuarantine = false): array {
         $lockKey = 'calendarbridge/feed/' . $feedId;
@@ -78,7 +78,7 @@ class SyncService {
     }
 
     /**
-     * @return array{added: int, updated: int, deleted: int, held: int, durationMs: int, skipped: bool}
+     * @return array{added: int, updated: int, deleted: int, expired: int, held: int, durationMs: int, skipped: bool}
      */
     private function syncFeedUnlocked(int $feedId, bool $applyQuarantine): array {
         $startTime = (int)(microtime(true) * 1000);
@@ -169,10 +169,10 @@ class SyncService {
             $stats = $this->calendarService->syncEvents(
                 $calendarId,
                 $calendar,
-                function (int $toDelete, int $existing) use ($feed, $incoming, $hash, $applyQuarantine, &$decision, &$heldResultApplied): bool {
+                function (int $toDelete, int $existing, int $expired) use ($feed, $incoming, $hash, $applyQuarantine, &$decision, &$heldResultApplied): bool {
                     $heldResult = $feed->getQuarantineHash() === $hash
-                        && $this->quarantine->reason($existing, $toDelete, $incoming) !== null;
-                    $decision = $this->quarantine->decide($feed, $existing, $toDelete, $incoming, $hash, $applyQuarantine);
+                        && $this->quarantine->reason($existing, $toDelete, $incoming, $expired) !== null;
+                    $decision = $this->quarantine->decide($feed, $existing, $toDelete, $incoming, $hash, $applyQuarantine, $expired);
                     $heldResultApplied = $heldResult && $decision === Quarantine::APPLY;
                     return $decision === Quarantine::APPLY;
                 },
@@ -280,12 +280,13 @@ class SyncService {
         return [...$this->emptyResult($startTime), 'skipped' => false];
     }
 
-    /** @return array{added: int, updated: int, deleted: int, held: int, durationMs: int} */
+    /** @return array{added: int, updated: int, deleted: int, expired: int, held: int, durationMs: int} */
     private function emptyResult(int $startTime): array {
         return [
             'added'      => 0,
             'updated'    => 0,
             'deleted'    => 0,
+            'expired'    => 0,
             'held'       => 0,
             'durationMs' => $startTime === 0 ? 0 : $this->elapsed($startTime),
         ];

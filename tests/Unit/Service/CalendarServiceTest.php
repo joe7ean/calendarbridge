@@ -6,6 +6,7 @@ namespace OCA\CalendarBridge\Tests\Unit\Service;
 
 use OCA\CalendarBridge\Service\CalendarService;
 use OCA\DAV\CalDAV\CalDavBackend;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\DB\IResult;
 use OCP\DB\QueryBuilder\IExpressionBuilder;
 use OCP\DB\QueryBuilder\IQueryBuilder;
@@ -17,6 +18,9 @@ use Psr\Log\LoggerInterface;
 use Sabre\VObject\Reader;
 
 class CalendarServiceTest extends TestCase {
+    /** 2026-06-01 12:00:00 UTC */
+    private const NOW = 1780315200;
+
     /**
      * @param list<string> $trashedUris URIs returned by the trash-bin query
      */
@@ -32,6 +36,9 @@ class CalendarServiceTest extends TestCase {
         $qb->method('expr')->willReturn($this->createMock(IExpressionBuilder::class));
         $qb->method('executeQuery')->willReturn($result);
 
+        $time = $this->createMock(ITimeFactory::class);
+        $time->method('getTime')->willReturn(self::NOW);
+
         $db = $this->createMock(IDBConnection::class);
         $db->method('getQueryBuilder')->willReturn($qb);
 
@@ -41,6 +48,7 @@ class CalendarServiceTest extends TestCase {
             $this->createMock(IGroupManager::class),
             $this->createMock(LoggerInterface::class),
             new \OCA\CalendarBridge\Activity\PrivacyScope(),
+            $time,
         );
     }
 
@@ -203,7 +211,7 @@ ICS;
         $feed = str_replace('DTSTAMP:20260101T000000Z', 'DTSTAMP:20260301T000000Z', self::SERIES);
         $stats = $this->service($calDav)->syncEvents(1, Reader::read($feed));
 
-        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'held' => 0], $stats);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'expired' => 0, 'held' => 0], $stats);
     }
 
     public function testChangedOverrideUpdatesTheSeriesObject(): void {
@@ -234,7 +242,7 @@ ICS;
 
     public function testObjectMissingFromFeedIsDeletedPermanently(): void {
         $stored = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:removed@example\r\n"
-            . "DTSTART:20200101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+            . "DTSTART:20300101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         $calDav = $this->calDavWith(['removed@example.ics' => $stored]);
         $calDav->expects(self::once())
             ->method('deleteCalendarObject')
@@ -247,7 +255,7 @@ ICS;
 
     public function testDeletionsAreHeldWhenNotApproved(): void {
         $stored = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:removed@example\r\n"
-            . "DTSTART:20200101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+            . "DTSTART:20300101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         $calDav = $this->calDavWith(['removed@example.ics' => $stored]);
         $calDav->expects(self::never())->method('deleteCalendarObject');
 
@@ -255,19 +263,69 @@ ICS;
         $stats = $this->service($calDav)->syncEvents(
             1,
             Reader::read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"),
-            function (int $toDelete, int $existing) use (&$asked): bool {
-                $asked = [$toDelete, $existing];
+            function (int $toDelete, int $existing, int $expired) use (&$asked): bool {
+                $asked = [$toDelete, $existing, $expired];
                 return false;
             },
         );
 
-        self::assertSame([1, 1], $asked);
-        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'held' => 1], $stats);
+        self::assertSame([1, 1, 0], $asked);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'expired' => 0, 'held' => 1], $stats);
+    }
+
+    private static function eventObject(string $uid, string $lines): string {
+        return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:$uid\r\nDTSTAMP:20200101T000000Z\r\n" . $lines . "\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    }
+
+    /** @return array<string, array{string, int, int}> */
+    public static function absentObjects(): array {
+        return [
+            'ended long ago' => [self::eventObject('a@x', "DTSTART:20200101T100000Z\r\nDTEND:20200101T110000Z"), 0, 1],
+            'all-day long ago' => [self::eventObject('a@x', "DTSTART;VALUE=DATE:20200101\r\nDTEND;VALUE=DATE:20200102"), 0, 1],
+            'bounded series, all past' => [self::eventObject('a@x', "DTSTART:20260105T090000Z\r\nRRULE:FREQ=WEEKLY;COUNT=3"), 0, 1],
+            'bounded series, still running' => [self::eventObject('a@x', "DTSTART:20260105T090000Z\r\nRRULE:FREQ=WEEKLY;COUNT=40"), 1, 0],
+            'unbounded series' => [self::eventObject('a@x', "DTSTART:20200105T090000Z\r\nRRULE:FREQ=WEEKLY"), 1, 0],
+            'upcoming' => [self::eventObject('a@x', 'DTSTART:20300101T100000Z'), 1, 0],
+            'ended within the grace period' => [self::eventObject('a@x', "DTSTART:20260601T060000Z\r\nDTEND:20260601T070000Z"), 1, 0],
+            'no start date' => [self::eventObject('a@x', 'SUMMARY:broken'), 1, 0],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('absentObjects')]
+    public function testAbsentObjectsAreClassifiedAsExpiredOrRemoved(string $stored, int $removed, int $expired): void {
+        $calDav = $this->calDavWith(['a@x.ics' => $stored]);
+        $calDav->expects(self::once())->method('deleteCalendarObject');
+
+        $stats = $this->service($calDav)->syncEvents(1, Reader::read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"));
+
+        self::assertSame($removed, $stats['deleted']);
+        self::assertSame($expired, $stats['expired']);
+    }
+
+    public function testExpiredObjectsAreHeldTogetherWithRemovedOnes(): void {
+        $calDav = $this->calDavWith([
+            'old@x.ics' => self::eventObject('old@x', "DTSTART:20200101T100000Z\r\nDTEND:20200101T110000Z"),
+            'new@x.ics' => self::eventObject('new@x', 'DTSTART:20300101T100000Z'),
+        ]);
+        $calDav->expects(self::never())->method('deleteCalendarObject');
+
+        $asked = null;
+        $stats = $this->service($calDav)->syncEvents(
+            1,
+            Reader::read("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"),
+            function (int $removed, int $existing, int $expired) use (&$asked): bool {
+                $asked = [$removed, $existing, $expired];
+                return false;
+            },
+        );
+
+        self::assertSame([1, 2, 1], $asked);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'expired' => 0, 'held' => 2], $stats);
     }
 
     public function testAdditionsAreAppliedEvenWhileDeletionsAreHeld(): void {
         $stored = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:old@example\r\n"
-            . "DTSTART:20200101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+            . "DTSTART:20300101T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         $calDav = $this->calDavWith(['old@example.ics' => $stored]);
         $calDav->expects(self::once())->method('createCalendarObject');
         $calDav->expects(self::never())->method('deleteCalendarObject');
@@ -323,6 +381,6 @@ ICS;
 
         $stats = $this->service($calDav)->syncEvents(1, Reader::read($feed));
 
-        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'held' => 0], $stats);
+        self::assertSame(['added' => 0, 'updated' => 0, 'deleted' => 0, 'expired' => 0, 'held' => 0], $stats);
     }
 }

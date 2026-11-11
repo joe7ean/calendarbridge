@@ -101,11 +101,15 @@ class SyncServiceTest extends TestCase {
     }
 
     /** Let syncEvents ask for approval of $toDelete out of $existing objects. */
-    private function relayDeletes(int $toDelete, int $existing): void {
+    private function relayDeletes(int $toDelete, int $existing, int $expired = 0): void {
         $this->calendarService->method('syncEvents')->willReturnCallback(
-            static function ($calendarId, $calendar, ?callable $approve) use ($toDelete, $existing): array {
-                $ok = $approve === null || $approve($toDelete, $existing);
-                return ['added' => 0, 'updated' => 0, 'deleted' => $ok ? $toDelete : 0, 'held' => $ok ? 0 : $toDelete];
+            static function ($calendarId, $calendar, ?callable $approve) use ($toDelete, $existing, $expired): array {
+                $ok = $approve === null || $approve($toDelete, $existing, $expired);
+                return [
+                    'added' => 0, 'updated' => 0,
+                    'deleted' => $ok ? $toDelete : 0, 'expired' => $ok ? $expired : 0,
+                    'held' => $ok ? 0 : $toDelete + $expired,
+                ];
             },
         );
     }
@@ -123,6 +127,27 @@ class SyncServiceTest extends TestCase {
         self::assertSame(0, $this->feed->getConsecutiveErrors());
         self::assertSame(Quarantine::REASON_EMPTY, $this->feed->getQuarantineReason());
         self::assertSame('Sat, 24 Oct 2026 10:00:00 GMT', $this->feed->getLastModified());
+    }
+
+    public function testMassExpiryOfOldEventsIsNotSuspicious(): void {
+        $this->feedReturns("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:keep@x\r\nDTSTART:20300101T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+        $this->relayDeletes(0, 15, 14);
+        $this->notifications->expects(self::never())->method('notifyQuarantine');
+
+        $result = $this->service()->syncFeed(42);
+
+        self::assertSame([0, 14, 0], [$result['deleted'], $result['expired'], $result['held']]);
+        self::assertFalse($this->feed->isInQuarantine());
+    }
+
+    public function testEmptyFeedHoldsExpiredEventsToo(): void {
+        $this->feedReturns("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n");
+        $this->relayDeletes(0, 5, 5);
+
+        $result = $this->service()->syncFeed(42);
+
+        self::assertSame([0, 0, 5], [$result['deleted'], $result['expired'], $result['held']]);
+        self::assertSame(Quarantine::REASON_EMPTY, $this->feed->getQuarantineReason());
     }
 
     public function testQuarantinedFeedIsFetchedWithoutConditionalHeaders(): void {

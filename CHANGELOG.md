@@ -47,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Events that disappear from a feed are now classified: *expired* (the last occurrence
+  ended more than a day ago, the source merely stopped listing it) versus *removed*
+  (upcoming, ongoing, unbounded or unclear) (ADR 0016). Users only see removed events
+  in the daily summary; expired events are not reported to them and never trigger a
+  quarantine by themselves. Administrators see both counts in the sync result and in
+  `occ calendarbridge:sync`.
 - **Supported Nextcloud versions are now 32–35** (was 30–34), tested on 32, 34 and 35
   ([ADR 0011](docs/adr/0011-compatibility-window.md)).
 - An empty feed is no longer an error that pauses the feed after 10 runs; it is

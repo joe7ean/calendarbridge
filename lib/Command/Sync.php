@@ -66,12 +66,13 @@ class Sync extends Command {
                 continue;
             }
             $output->writeln(sprintf(
-                '[%d %s] +%d ~%d -%d%s (%d ms)',
+                '[%d %s] +%d ~%d -%d (expired: %d)%s (%d ms)',
                 $id,
                 $feed->getFeedName(),
                 $r['added'],
                 $r['updated'],
                 $r['deleted'],
+                $r['expired'],
                 $r['held'] > 0 ? sprintf(', %d deletions held in quarantine', $r['held']) : '',
                 $r['durationMs'],
             ));

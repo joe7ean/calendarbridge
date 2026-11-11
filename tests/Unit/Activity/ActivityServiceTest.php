@@ -67,6 +67,19 @@ class ActivityServiceTest extends TestCase {
         self::assertStringNotContainsString('SECRET', $this->feed->getActivityState());
     }
 
+    public function testExpiredEventsAreNeverReportedToUsers(): void {
+        $this->service->success($this->feed, ['expired' => 40], false, false);
+        $this->now += 86400;
+        $this->service->flush($this->feed);
+        self::assertSame([], $this->published);
+        self::assertStringNotContainsString('expired', (string)$this->feed->getActivityState());
+
+        $this->service->success($this->feed, ['added' => 1, 'expired' => 40], false, false);
+        $this->now += 86400;
+        $this->service->flush($this->feed);
+        self::assertSame([['summary', ['added' => 1, 'updated' => 0, 'deleted' => 0]]], $this->published);
+    }
+
     public function testUnchangedFeedIsSilent(): void {
         $this->service->success($this->feed, [], false, false);
         $this->now += 86400;

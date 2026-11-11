@@ -129,6 +129,17 @@ for round in 1 2; do
 done
 check "trash bin empty" "$(field "$(h trashed "$FEED_ID")" '$d["trashed"]')" 0
 
+echo "events the source stops listing: expired versus removed (ADR 0016)"
+{
+	sed '/^END:VCALENDAR/d' "$DIR/fixtures/series.ics"
+	printf 'BEGIN:VEVENT\r\nUID:cbtest-old-1\r\nDTSTAMP:20200101T000000Z\r\nDTSTART:20200101T100000Z\r\nDTEND:20200101T110000Z\r\nSUMMARY:Long past\r\nEND:VEVENT\r\n'
+	printf 'END:VCALENDAR\r\n'
+} > "$FEED"
+check "old event added" "$(field "$(h sync "$FEED_ID")" '$d["added"]')" 1
+cp "$DIR/fixtures/series.ics" "$FEED"
+R=$(h sync "$FEED_ID")
+check "past event is expired, not removed" "$(field "$R" '[$d["deleted"], $d["expired"], $d["held"]]')" '[0,1,0]'
+
 echo "object left in the trash bin by 0.2.0"
 h softdelete "$FEED_ID" cbtest-single-1.ics >/dev/null
 check "re-created after purge" "$(field "$(h sync "$FEED_ID")" '$d["added"]')" 1
@@ -152,7 +163,7 @@ echo "mass deletion → quarantine, reject and apply via occ"
 {
 	sed '/^END:VCALENDAR/d' "$DIR/fixtures/series.ics"
 	i=1; while [ $i -le 12 ]; do
-		printf 'BEGIN:VEVENT\r\nUID:bulk-%d\r\nDTSTAMP:20261024T000000Z\r\nDTSTART:202612%02dT100000Z\r\nSUMMARY:Bulk %d\r\nEND:VEVENT\r\n' $i $i $i
+		printf 'BEGIN:VEVENT\r\nUID:bulk-%d\r\nDTSTAMP:20261024T000000Z\r\nDTSTART:209912%02dT100000Z\r\nSUMMARY:Bulk %d\r\nEND:VEVENT\r\n' $i $i $i
 		i=$((i + 1))
 	done
 	printf 'END:VCALENDAR\r\n'

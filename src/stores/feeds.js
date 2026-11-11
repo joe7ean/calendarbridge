@@ -51,7 +51,7 @@ export const useFeedsStore = defineStore('feeds', {
 					showError(t('calendarbridge', 'Sync completed, but {held} deletions are on hold. Please review the feed.', data))
 				} else {
 					showSuccess(
-						t('calendarbridge', 'Sync completed: {added} added, {updated} updated, {deleted} deleted', data)
+						t('calendarbridge', 'Sync completed: {added} added, {updated} updated, {deleted} removed, {expired} expired', data)
 					)
 				}
 			} catch (e) {

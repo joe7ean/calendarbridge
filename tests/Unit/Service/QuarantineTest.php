@@ -30,6 +30,16 @@ class QuarantineTest extends TestCase {
         self::assertSame(Quarantine::APPLY, $q->decide(new Feed(), 100, 40, 60, 'h'));
     }
 
+    public function testExpiredEventsNeverTriggerAMassDeletion(): void {
+        $q = $this->quarantine();
+        self::assertNull($q->reason(100, 0, 40, 60));       // only expired events vanish
+        self::assertNull($q->reason(100, 9, 40, 51));       // few removed among many expired
+        // The ratio is measured against what was not expired: 10 of 20 live events.
+        self::assertSame(Quarantine::REASON_MASS_DELETE, $q->reason(100, 10, 70, 80));
+        // An empty feed is suspicious even when everything stored has expired.
+        self::assertSame(Quarantine::REASON_EMPTY, $q->reason(5, 0, 0, 5));
+    }
+
     public function testEmptyFeedAndMassDeletionAreSuspicious(): void {
         $q = $this->quarantine();
         self::assertSame(Quarantine::REASON_EMPTY, $q->reason(3, 3, 0));

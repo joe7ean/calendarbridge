@@ -46,8 +46,13 @@ class Quarantine {
         return hash('sha256', implode("\n", $uids));
     }
 
-    public function reason(int $existing, int $toDelete, int $incoming): ?string {
-        if ($toDelete === 0) {
+    /**
+     * @param int $toDelete removed objects (possible cancellations)
+     * @param int $expired absent objects that ended long ago; they never make a
+     *                     result suspicious on their own, but an empty feed holds them too
+     */
+    public function reason(int $existing, int $toDelete, int $incoming, int $expired = 0): ?string {
+        if ($toDelete + $expired === 0) {
             return null;
         }
         if ($incoming === 0) {
@@ -55,7 +60,7 @@ class Quarantine {
         }
         $minDeletions = $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_min_deletions', 10);
         $ratio = $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_ratio_percent', 50);
-        if ($toDelete >= $minDeletions && $toDelete * 100 >= $ratio * $existing) {
+        if ($toDelete >= $minDeletions && $toDelete * 100 >= $ratio * ($existing - $expired)) {
             return self::REASON_MASS_DELETE;
         }
         return null;
@@ -65,8 +70,8 @@ class Quarantine {
      * @param bool $adminApproved the admin applied the quarantined result
      * @return self::APPLY|self::HOLD|self::HOLD_NEW
      */
-    public function decide(Feed $feed, int $existing, int $toDelete, int $incoming, string $hash, bool $adminApproved = false): string {
-        $reason = $this->reason($existing, $toDelete, $incoming);
+    public function decide(Feed $feed, int $existing, int $toDelete, int $incoming, string $hash, bool $adminApproved = false, int $expired = 0): string {
+        $reason = $this->reason($existing, $toDelete, $incoming, $expired);
 
         if ($reason === null) {
             $feed->clearQuarantine();
@@ -83,7 +88,7 @@ class Quarantine {
             }
 
             $feed->setQuarantineCount($feed->getQuarantineCount() + 1);
-            $feed->setQuarantineHeld($toDelete);
+            $feed->setQuarantineHeld($toDelete + $expired);
 
             $minSyncs = $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_confirm_syncs', 2);
             $minAge = $this->appConfig->getValueInt(Application::APP_ID, 'quarantine_confirm_hours', 24) * 3600;
@@ -100,7 +105,7 @@ class Quarantine {
         $feed->setQuarantineCount(1);
         $feed->setQuarantineHash($hash);
         $feed->setQuarantineReason($reason);
-        $feed->setQuarantineHeld($toDelete);
+        $feed->setQuarantineHeld($toDelete + $expired);
         $feed->setRejectedHash(null);
         return self::HOLD_NEW;
     }

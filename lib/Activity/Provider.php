@@ -44,7 +44,7 @@ class Provider implements IProvider {
             // Removed feeds retain a useful, non-sensitive historical ID.
         }
         $text = match ($event->getSubject()) {
-            'summary' => $l->t('Calendar Bridge %s: %s added, %s updated, %s removed. Removed events are no longer in the source; this does not necessarily mean cancellation.', [$id, (int)($p['added'] ?? 0), (int)($p['updated'] ?? 0), (int)($p['deleted'] ?? 0)]),
+            'summary' => $l->t('Calendar Bridge %s: %s added, %s updated, %s removed. Removed events are upcoming or ongoing events that are no longer in the source; this does not necessarily mean cancellation.', [$id, (int)($p['added'] ?? 0), (int)($p['updated'] ?? 0), (int)($p['deleted'] ?? 0)]),
             'held' => $l->t('Calendar Bridge %s: suspicious removals are on hold. The affected events are kept.', [$id]),
             'released' => $l->t('Calendar Bridge %s: the source changed and quarantine has ended.', [$id]),
             'applied_admin' => $l->t('Calendar Bridge %s: %s held removals were approved by an administrator.', [$id, (int)($p['deleted'] ?? 0)]),

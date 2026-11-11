@@ -6,6 +6,7 @@ namespace OCA\CalendarBridge\Service;
 
 use OCA\DAV\CalDAV\CalDavBackend;
 use OCA\CalendarBridge\Activity\PrivacyScope;
+use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 use OCP\IGroupManager;
@@ -14,6 +15,7 @@ use Sabre\DAV\PropPatch;
 use Sabre\VObject\Component\VCalendar;
 use Sabre\VObject\Component\VEvent;
 use Sabre\VObject\Property;
+use Sabre\VObject\Recur\EventIterator;
 use Sabre\VObject\Reader;
 
 class CalendarService {
@@ -24,12 +26,18 @@ class CalendarService {
     private const GROUP_PRINCIPAL_PREFIX = 'principals/groups/';
     private const USER_PRINCIPAL_PREFIX = 'principals/users/';
 
+    /** An absent event counts as expired once it ended at least this long ago (ADR 0016). */
+    private const EXPIRY_GRACE = 86400;
+    /** Occurrences inspected per series before it is treated as still active. */
+    private const MAX_OCCURRENCES = 2000;
+
     public function __construct(
         private readonly CalDavBackend $calDavBackend,
         private readonly IDBConnection $db,
         private readonly IGroupManager $groupManager,
         private readonly LoggerInterface $logger,
         private readonly PrivacyScope $privacy,
+        private readonly ITimeFactory $time,
     ) {
     }
 
@@ -121,11 +129,16 @@ class CalendarService {
      * overrides) form one calendar object, as CalDAV requires.
      *
      * Additions and updates are always applied. Deletions are applied only if
-     * $approveDeletes (called with the number of objects to delete and the number
-     * of existing objects) returns true; otherwise they are counted as held.
+     * $approveDeletes returns true; otherwise they are counted as held. It is called
+     * with the number of removed objects, the number of existing objects and the
+     * number of expired objects.
      *
-     * @param (callable(int $toDelete, int $existing): bool)|null $approveDeletes
-     * @return array{added: int, updated: int, deleted: int, held: int}
+     * Absent objects whose last occurrence ended long ago are "expired" (the source
+     * merely stopped listing old events, ADR 0016); all other absent objects are
+     * "removed" and may be cancellations. When in doubt an object counts as removed.
+     *
+     * @param (callable(int $removed, int $existing, int $expired): bool)|null $approveDeletes
+     * @return array{added: int, updated: int, deleted: int, expired: int, held: int}
      */
     public function syncEvents(int $calendarId, VCalendar $calendar, ?callable $approveDeletes = null): array {
         return $this->privacy->run(fn () => $this->syncEventsPrivately($calendarId, $calendar, $approveDeletes));
@@ -135,6 +148,7 @@ class CalendarService {
         $added   = 0;
         $updated = 0;
         $deleted = 0;
+        $expiredCount = 0;
 
         $this->purgeTrashedObjects($calendarId);
         $existing = $this->loadExistingObjects($calendarId);
@@ -191,20 +205,55 @@ class CalendarService {
         // Delete objects no longer present in the feed. Permanently: a trashed
         // object would block re-creating the same UID later (ADR 0009).
         $toDelete = array_diff_key($existing, $seen);
-        if ($toDelete !== [] && $approveDeletes !== null && !$approveDeletes(count($toDelete), count($existing))) {
-            return ['added' => $added, 'updated' => $updated, 'deleted' => 0, 'held' => count($toDelete)];
+        $cutoff = $this->time->getTime() - self::EXPIRY_GRACE;
+        $expired = array_filter($toDelete, fn (array $obj): bool => $this->hasEnded($obj['calendardata'], $cutoff));
+        if ($toDelete !== [] && $approveDeletes !== null
+            && !$approveDeletes(count($toDelete) - count($expired), count($existing), count($expired))) {
+            return ['added' => $added, 'updated' => $updated, 'deleted' => 0, 'expired' => 0, 'held' => count($toDelete)];
         }
-        foreach ($toDelete as $obj) {
+        foreach ($toDelete as $uid => $obj) {
             $this->calDavBackend->deleteCalendarObject(
                 $calendarId,
                 $obj['uri'],
                 CalDavBackend::CALENDAR_TYPE_CALENDAR,
                 true,
             );
-            $deleted++;
+            if (isset($expired[$uid])) {
+                $expiredCount++;
+            } else {
+                $deleted++;
+            }
         }
 
-        return ['added' => $added, 'updated' => $updated, 'deleted' => $deleted, 'held' => 0];
+        return ['added' => $added, 'updated' => $updated, 'deleted' => $deleted, 'expired' => $expiredCount, 'held' => 0];
+    }
+
+    /**
+     * Whether every occurrence of the object ended before $cutoff. Anything
+     * unparseable, unbounded or too long to inspect counts as not ended.
+     */
+    private function hasEnded(string $icsData, int $cutoff): bool {
+        try {
+            $vcal = Reader::read($icsData);
+            $uid = (string)($vcal->VEVENT->UID ?? '');
+            if (!isset($vcal->VEVENT) || $uid === '') {
+                return false;
+            }
+            $it = new EventIterator($vcal, $uid);
+            if ($it->isInfinite()) {
+                return false;
+            }
+            $last = null;
+            for ($i = 0; $it->valid(); $it->next(), $i++) {
+                if ($i >= self::MAX_OCCURRENCES) {
+                    return false;
+                }
+                $last = $it->getDtEnd()->getTimestamp();
+            }
+            return $last !== null && $last < $cutoff;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     // -------------------------------------------------------------------------
