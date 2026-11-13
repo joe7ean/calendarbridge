@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `img/app.svg` icon (black) next to the white `img/app-dark.svg`, as the App Store expects.
+- New app icon: a calendar with sync arrows (`img/app.svg` black, `img/app-dark.svg` white), replacing the generic calendar glyph.
 
 ### Changed
 
