@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `img/app.svg` icon (black) next to the white `img/app-dark.svg`, as the App Store expects.
+
+### Changed
+
+- Documented the App Store route and release signing (ADR 0017, proposed).
+
 ## [0.4.0] - 2026-11-13
 
 ### Added

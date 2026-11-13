@@ -27,3 +27,4 @@ does, so that neither humans nor agents "fix" a deliberate trade-off.
 | [0014](0014-self-healing-job-registration.md) | Self-healing registration of sync jobs | Accepted |
 | [0015](0015-private-activity-summaries.md) | Private activity summaries and status transitions | Accepted (0.4.0-beta.1) |
 | [0016](0016-expired-versus-removed-events.md) | Distinguish expired from removed events | Accepted (0.4.0-beta.1) |
+| [0017](0017-publish-via-the-nextcloud-app-store.md) | Publish via the Nextcloud App Store | Proposed |

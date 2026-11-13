@@ -8,7 +8,9 @@ Calendar Bridge is functionally complete and under active maintenance. The `0.x`
 version number reflects limited exposure to different setups so far, not an
 unfinished feature set.
 It is **not yet available** in the official Nextcloud App Store.
-Publishing to the official Nextcloud App Store is the target.
+Publishing to the official Nextcloud App Store is the target
+([ADR 0017](docs/adr/0017-publish-via-the-nextcloud-app-store.md)); managed hosts without
+shell access (for example Hetzner Storage Share) can only install it from there.
 
 Contributions, optimizations, and feedback are highly welcome!
 

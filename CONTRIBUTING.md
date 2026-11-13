@@ -79,3 +79,11 @@ Every release goes through three stages ([ADR 0013](docs/adr/0013-staged-rollout
 9. `make release` → `dist/calendarbridge-x.y.z.tar.gz`; attach it to the GitHub release.
 10. Update the production instance: replace the app directory, do not unpack over it
     (see README). Watch the log for a day.
+
+**App Store releases (from 1.0.0, [ADR 0017](docs/adr/0017-publish-via-the-nextcloud-app-store.md))**
+
+11. Sign the unsigned tarball locally with `occ integrity:sign-app` (the private key never
+    leaves the maintainer's machine; keep its backup current) and verify it with
+    `occ integrity:check-app calendarbridge` on the test instance.
+12. Attach the signed tarball to the GitHub release and upload it to the App Store with
+    its signature.
