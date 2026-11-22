@@ -31,7 +31,16 @@ RSYNC_EXCLUDE = \
 	--exclude='*.plan.md' \
 	--exclude=tests \
 	--exclude=phpunit.xml \
-	--exclude='*.log'
+	--exclude='*.log' \
+	--exclude=dist \
+	--exclude=.release-staging \
+	--exclude=.dev-tools \
+	--exclude=YUNOHOST.md \
+	--exclude=featurelog \
+	--exclude=buglog \
+	--exclude='*.pem' \
+	--exclude='*.key' \
+	--exclude='*.crt'
 
 .PHONY: help setup build dev watch deploy deploy-fast enable disable upgrade migrate logs test e2e e2e-matrix version-check clean composer-prod release release-clean
 
