@@ -54,6 +54,18 @@ class Provider implements IProvider {
             'stopped' => $l->t('Calendar Bridge %s: updates have been stopped by an administrator.', [$id]),
             default => throw new UnknownActivityException('Unknown subject'),
         };
-        return $event->setParsedSubject($text)->setIcon($this->urls->imagePath(Application::APP_ID, 'app.svg'));
+        return $event->setParsedSubject($text)->setIcon($this->icon());
+    }
+
+    /**
+     * imagePath() throws for a missing file, and Nextcloud drops an event whose
+     * parse() throws. A broken icon must not hide the activity text (#2).
+     */
+    private function icon(): string {
+        try {
+            return $this->urls->getAbsoluteURL($this->urls->imagePath(Application::APP_ID, 'app.svg'));
+        } catch (\RuntimeException) {
+            return '';
+        }
     }
 }

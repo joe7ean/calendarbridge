@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the health check reported them as "Overdue" every evening. Sync jobs are
   time-sensitive again; existing jobs are re-created once on upgrade
   ([ADR 0018](docs/adr/0018-time-sensitive-sync-jobs.md), #1).
+- Activity summaries were not shown in 0.4.0: the release lacked `img/app.svg`, and
+  Nextcloud dropped every event whose icon could not be resolved. The icon now ships,
+  a missing icon no longer hides the event, and the icon URL is absolute so it also
+  works in clients outside the web interface (#2).
 
 ## [0.4.0] - 2026-11-13
 

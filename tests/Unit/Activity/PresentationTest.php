@@ -66,6 +66,54 @@ class PresentationTest extends TestCase {
         }
     }
 
+    public function testMissingIconDoesNotDropTheEvent(): void {
+        $feeds = $this->createMock(FeedMapper::class);
+        $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
+        $urls = $this->createMock(IURLGenerator::class);
+        $urls->method('imagePath')->willThrowException(new \RuntimeException('image not found'));
+        $event = $this->createMock(IEvent::class);
+        $event->method('getApp')->willReturn('calendarbridge');
+        $event->method('getObjectId')->willReturn(42);
+        $event->method('getSubject')->willReturn('summary');
+        $event->method('getSubjectParameters')->willReturn([]);
+        $event->expects(self::once())->method('setParsedSubject')->willReturnSelf();
+        $event->expects(self::once())->method('setIcon')->with('')->willReturnSelf();
+
+        (new Provider($this->translations(), $urls, $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
+    }
+
+    public function testIconIsAnAbsoluteUrl(): void {
+        $feeds = $this->createMock(FeedMapper::class);
+        $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
+        $urls = $this->createMock(IURLGenerator::class);
+        $urls->method('imagePath')->with('calendarbridge', 'app.svg')->willReturn('/apps/calendarbridge/img/app.svg');
+        $urls->method('getAbsoluteURL')->willReturnCallback(static fn ($path) => 'https://cloud.example' . $path);
+        $event = $this->createMock(IEvent::class);
+        $event->method('getApp')->willReturn('calendarbridge');
+        $event->method('getObjectId')->willReturn(42);
+        $event->method('getSubject')->willReturn('summary');
+        $event->method('getSubjectParameters')->willReturn([]);
+        $event->method('setParsedSubject')->willReturnSelf();
+        $event->expects(self::once())->method('setIcon')->with('https://cloud.example/apps/calendarbridge/img/app.svg')->willReturnSelf();
+
+        (new Provider($this->translations(), $urls, $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
+    }
+
+    /** Regression guard for #2: every icon the code asks Nextcloud for is shipped. */
+    public function testEveryReferencedImageExists(): void {
+        $root = dirname(__DIR__, 3);
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root . '/lib', \FilesystemIterator::SKIP_DOTS));
+        $found = 0;
+        foreach ($files as $file) {
+            preg_match_all("/imagePath\\(\\s*Application::APP_ID\\s*,\\s*'([^']+)'/", (string)file_get_contents($file->getPathname()), $m);
+            foreach ($m[1] as $image) {
+                $found++;
+                self::assertFileExists($root . '/img/' . $image, $file->getFilename() . " references img/$image");
+            }
+        }
+        self::assertGreaterThanOrEqual(2, $found, 'imagePath() references not found; is the pattern still right?');
+    }
+
     public function testActivityPreferencesCannotEnableSummaryMailOrPush(): void {
         $setting = new Setting($this->createMock(IL10N::class));
         self::assertFalse($setting->canChangeMail());
