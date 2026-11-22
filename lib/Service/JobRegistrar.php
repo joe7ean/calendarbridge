@@ -23,6 +23,7 @@ use Psr\Log\LoggerInterface;
  */
 class JobRegistrar {
     private const CHECK_INTERVAL = 3600;
+    private const TIME_SENSITIVE_FLAG = 'sync_jobs_time_sensitive';
 
     public function __construct(
         private readonly FeedMapper $feedMapper,
@@ -67,5 +68,32 @@ class JobRegistrar {
             $this->logger->warning('CalendarBridge: re-registered missing background jobs', ['count' => $added]);
         }
         return $added;
+    }
+
+    /**
+     * Up to 0.4.0 SyncJob was time-insensitive. Nextcloud stores that in the job
+     * row and never sets it back, so existing jobs would still only run in the
+     * maintenance window. Re-adding a job creates a row with the default
+     * (time-sensitive). Runs once; a re-added job does not fetch early because
+     * SyncJob checks the feed's own last sync time (ADR 0003).
+     *
+     * @return int number of jobs that were re-created
+     */
+    public function makeSyncJobsTimeSensitive(): int {
+        if ($this->appConfig->getValueBool(Application::APP_ID, self::TIME_SENSITIVE_FLAG, false)) {
+            return 0;
+        }
+        $count = 0;
+        foreach ($this->feedMapper->findAll() as $feed) {
+            $argument = ['feedId' => $feed->getId()];
+            if ($this->jobList->has(SyncJob::class, $argument)) {
+                $this->jobList->remove(SyncJob::class, $argument);
+            }
+            $this->jobList->add(SyncJob::class, $argument);
+            $count++;
+        }
+        $this->appConfig->setValueBool(Application::APP_ID, self::TIME_SENSITIVE_FLAG, true);
+        $this->logger->info('CalendarBridge: re-created sync jobs as time-sensitive', ['count' => $count]);
+        return $count;
     }
 }

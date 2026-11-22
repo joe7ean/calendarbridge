@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documented the App Store route and release signing (ADR 0017, proposed).
 
+### Fixed
+
+- Feeds synced only once a night on instances with `maintenance_window_start` set,
+  and the health check reported them as "Overdue" every evening. Sync jobs are
+  time-sensitive again; existing jobs are re-created once on upgrade
+  ([ADR 0018](docs/adr/0018-time-sensitive-sync-jobs.md), #1).
+
 ## [0.4.0] - 2026-11-13
 
 ### Added

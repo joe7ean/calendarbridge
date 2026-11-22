@@ -65,4 +65,31 @@ class JobRegistrarTest extends TestCase {
 
         $this->registrar()->ensureJobsThrottled();
     }
+
+    public function testSyncJobsAreRecreatedOnceAsTimeSensitive(): void {
+        $this->appConfig->method('getValueBool')->willReturn(false);
+        $this->jobList->method('has')->willReturnCallback(
+            static fn ($class, $argument = null) => $argument['feedId'] === 1,
+        );
+        $this->jobList->expects(self::once())->method('remove')->with(SyncJob::class, ['feedId' => 1]);
+        $added = [];
+        $this->jobList->expects(self::exactly(2))->method('add')->willReturnCallback(
+            static function ($class, $argument) use (&$added): void {
+                $added[] = [$class, $argument];
+            },
+        );
+        $this->appConfig->expects(self::once())->method('setValueBool')->with('calendarbridge', 'sync_jobs_time_sensitive', true);
+
+        self::assertSame(2, $this->registrar()->makeSyncJobsTimeSensitive());
+        self::assertSame([[SyncJob::class, ['feedId' => 1]], [SyncJob::class, ['feedId' => 2]]], $added);
+    }
+
+    public function testSyncJobsAreNotRecreatedAgain(): void {
+        $this->appConfig->method('getValueBool')->willReturn(true);
+        $this->jobList->expects(self::never())->method('remove');
+        $this->jobList->expects(self::never())->method('add');
+        $this->appConfig->expects(self::never())->method('setValueBool');
+
+        self::assertSame(0, $this->registrar()->makeSyncJobsTimeSensitive());
+    }
 }
