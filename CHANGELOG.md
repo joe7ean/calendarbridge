@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Pre-release 0.4.1-beta.1 for the staged rollout (ADR 0013).
+
 ### Added
 
 - New app icon: a calendar with sync arrows (`img/app.svg` black, `img/app-dark.svg` white), replacing the generic calendar glyph.
