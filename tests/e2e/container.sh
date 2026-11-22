@@ -6,7 +6,6 @@
 #
 # Needs podman or docker. The container uses SQLite and is removed afterwards.
 set -euo pipefail
-export MSYS_NO_PATHCONV=1 # Git Bash on Windows: do not rewrite container paths
 
 NC_VERSION=${1:?usage: container.sh <nextcloud-major> [tarball]}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -17,15 +16,14 @@ NAME=cb-e2e-nc$NC_VERSION
 
 [ -f "$TARBALL" ] || { echo "tarball $TARBALL not found (make release)" >&2; exit 2; }
 
-# Podman/Docker on Windows expects native paths for `cp`.
-hostpath() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
-
 cleanup() { $ENGINE rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
 
 echo "== starting Nextcloud $NC_VERSION"
-$ENGINE run -d --name "$NAME" --network=host \
+# Default container network: everything runs via `exec` inside the container, and with
+# --network=host a rootless engine cannot bind Apache to port 80.
+$ENGINE run -d --name "$NAME" \
 	-e SQLITE_DATABASE=nextcloud -e NEXTCLOUD_ADMIN_USER=admin -e NEXTCLOUD_ADMIN_PASSWORD=e2e-admin-pw-1234 \
 	-e APACHE_DISABLE_REWRITE_IP=1 \
 	"docker.io/library/nextcloud:$NC_VERSION-apache" >/dev/null
@@ -39,11 +37,11 @@ done
 occ status | grep -E 'versionstring|installed'
 
 echo "== installing $(basename "$TARBALL")"
-$ENGINE cp "$(hostpath "$TARBALL")" "$NAME:/tmp/app.tar.gz"
+$ENGINE cp "$TARBALL" "$NAME:/tmp/app.tar.gz"
 $ENGINE exec "$NAME" sh -c 'mkdir -p /var/www/html/custom_apps && tar -xzf /tmp/app.tar.gz -C /var/www/html/custom_apps && chown -R www-data:www-data /var/www/html/custom_apps'
 occ app:enable calendarbridge
 occ background:cron >/dev/null
 
 echo "== running scenarios"
-$ENGINE cp "$(hostpath "$ROOT/tests/e2e")" "$NAME:/tmp/cb-e2e-src"
+$ENGINE cp "$ROOT/tests/e2e" "$NAME:/tmp/cb-e2e-src"
 $ENGINE exec "$NAME" sh -c 'chmod -R a+rX /tmp/cb-e2e-src && cd /tmp && NC_ROOT=/var/www/html PHP=php WEB_USER=www-data PORT=18765 sh /tmp/cb-e2e-src/run.sh'
