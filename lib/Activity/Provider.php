@@ -63,7 +63,7 @@ class Provider implements IProvider {
      */
     private function icon(): string {
         try {
-            return $this->urls->getAbsoluteURL($this->urls->imagePath(Application::APP_ID, 'app.svg'));
+            return $this->urls->getAbsoluteURL($this->urls->imagePath(Application::APP_ID, 'app-dark.svg'));
         } catch (\RuntimeException) {
             return '';
         }

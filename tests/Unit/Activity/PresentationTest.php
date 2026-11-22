@@ -86,7 +86,7 @@ class PresentationTest extends TestCase {
         $feeds = $this->createMock(FeedMapper::class);
         $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
         $urls = $this->createMock(IURLGenerator::class);
-        $urls->method('imagePath')->with('calendarbridge', 'app.svg')->willReturn('/apps/calendarbridge/img/app.svg');
+        $urls->method('imagePath')->with('calendarbridge', 'app-dark.svg')->willReturn('/apps/calendarbridge/img/app-dark.svg');
         $urls->method('getAbsoluteURL')->willReturnCallback(static fn ($path) => 'https://cloud.example' . $path);
         $event = $this->createMock(IEvent::class);
         $event->method('getApp')->willReturn('calendarbridge');
@@ -94,7 +94,7 @@ class PresentationTest extends TestCase {
         $event->method('getSubject')->willReturn('summary');
         $event->method('getSubjectParameters')->willReturn([]);
         $event->method('setParsedSubject')->willReturnSelf();
-        $event->expects(self::once())->method('setIcon')->with('https://cloud.example/apps/calendarbridge/img/app.svg')->willReturnSelf();
+        $event->expects(self::once())->method('setIcon')->with('https://cloud.example/apps/calendarbridge/img/app-dark.svg')->willReturnSelf();
 
         (new Provider($this->translations(), $urls, $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
     }
@@ -112,6 +112,21 @@ class PresentationTest extends TestCase {
             }
         }
         self::assertGreaterThanOrEqual(2, $found, 'imagePath() references not found; is the pattern still right?');
+    }
+
+    /**
+     * Nextcloud convention: app.svg is white (app menu, app management on dark
+     * backgrounds), app-dark.svg is black and gets inverted by the dark theme.
+     * App management inlines the SVG and recolours `fill`, so strokes would turn
+     * the calendar frame into a solid block.
+     */
+    public function testAppIconsFollowTheNextcloudConvention(): void {
+        $root = dirname(__DIR__, 3) . '/img/';
+        foreach (['app.svg' => '#fff', 'app-dark.svg' => '#000'] as $file => $fill) {
+            $svg = (string)file_get_contents($root . $file);
+            self::assertStringContainsString('fill="' . $fill . '"', $svg, $file);
+            self::assertStringNotContainsString('stroke', $svg, "$file must use filled shapes only");
+        }
     }
 
     public function testActivityPreferencesCannotEnableSummaryMailOrPush(): void {
