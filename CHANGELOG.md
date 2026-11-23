@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Pre-release 0.4.1-beta.2 for the staged rollout (ADR 0013).
+Pre-release 0.4.1-beta.3 for the staged rollout (ADR 0013).
 
 ### Added
 
@@ -21,6 +21,10 @@ Pre-release 0.4.1-beta.2 for the staged rollout (ADR 0013).
 
 ### Changed
 
+- Shorter daily activity summaries: only non-zero counts are named, and events that
+  disappeared from the source are called "no longer in the source" instead of
+  "removed". The explanatory sentence that followed every summary is gone. Existing
+  summaries are shown in the new wording too.
 - Documented the App Store route and release signing (ADR 0017, proposed).
 
 ### Fixed
