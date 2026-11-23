@@ -9,7 +9,6 @@ use OCA\CalendarBridge\Db\FeedMapper;
 use OCA\CalendarBridge\Service\SyncService;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Utility\ITimeFactory;
-use OCP\BackgroundJob\IJob;
 use OCP\BackgroundJob\IJobList;
 use OCP\BackgroundJob\TimedJob;
 use OCP\IAppConfig;
@@ -45,8 +44,10 @@ class SyncJob extends TimedJob {
         // Prevent two sync runs for the same feed running in parallel
         $this->setAllowParallelRuns(false);
 
-        // Not time-critical: NC may delay execution on high-load servers
-        $this->setTimeSensitivity(IJob::TIME_INSENSITIVE);
+        // Time-sensitive (the TimedJob default) on purpose: with
+        // maintenance_window_start set, Nextcloud runs time-insensitive jobs only
+        // inside the nightly window, so a 6-hour feed would sync once a day.
+        // A run that is not due costs one primary-key lookup (ADR 0003).
     }
 
     protected function run(mixed $argument): void {

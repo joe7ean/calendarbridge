@@ -27,5 +27,9 @@ class RegisterSyncJobs implements IRepairStep {
         if ($added > 0) {
             $output->info("Re-registered {$added} missing sync job(s).");
         }
+        $recreated = $this->jobRegistrar->makeSyncJobsTimeSensitive();
+        if ($recreated > 0) {
+            $output->info("Re-created {$recreated} sync job(s) as time-sensitive.");
+        }
     }
 }

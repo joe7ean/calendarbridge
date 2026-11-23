@@ -7,13 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-23
+
 ### Added
 
-- New app icon: a calendar with sync arrows (`img/app.svg` black, `img/app-dark.svg` white), replacing the generic calendar glyph.
+- New app icon: a calendar with sync arrows, replacing the generic calendar glyph.
+  Following the Nextcloud convention, `img/app.svg` is white (app menu, app
+  management) and `img/app-dark.svg` is black (admin settings, activity stream; the
+  dark theme inverts it). Both use filled shapes only, so Nextcloud can recolour them.
 
 ### Changed
 
+- Shorter daily activity summaries: only non-zero counts are named, and events that
+  disappeared from the source are called "no longer in the source" instead of
+  "removed". The explanatory sentence that followed every summary is gone. Existing
+  summaries are shown in the new wording too.
 - Documented the App Store route and release signing (ADR 0017, proposed).
+
+### Fixed
+
+- Feeds synced only once a night on instances with `maintenance_window_start` set,
+  and the health check reported them as "Overdue" every evening. Sync jobs are
+  time-sensitive again; existing jobs are re-created once on upgrade
+  ([ADR 0018](docs/adr/0018-time-sensitive-sync-jobs.md), #1).
+- Activity summaries were not shown in 0.4.0: the release lacked `img/app.svg`, and
+  Nextcloud dropped every event whose icon could not be resolved. The icon now ships,
+  a missing icon no longer hides the event, and the icon URL is absolute so it also
+  works in clients outside the web interface (#2).
 
 ## [0.4.0] - 2026-11-13
 

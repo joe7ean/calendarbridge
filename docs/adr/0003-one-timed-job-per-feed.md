@@ -22,5 +22,6 @@ hourly regardless of its setting.
 ## Consequences
 
 Cron wakes each job at most every 15 minutes; a skipped run costs one primary-key lookup.
+This requires the job to be time-sensitive ([ADR 0018](0018-time-sensitive-sync-jobs.md)).
 We rejected a single job that iterates over all feeds: one slow feed would delay all the
 others, and Nextcloud's per-job timing and logging would be lost.

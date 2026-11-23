@@ -64,6 +64,10 @@ class SyncJobTest extends TestCase {
         self::assertSame(900, $this->job()->getInterval());
     }
 
+    public function testJobIsTimeSensitiveSoItRunsOutsideTheMaintenanceWindow(): void {
+        self::assertTrue($this->job()->isTimeSensitive());
+    }
+
     public function testFeedIsSkippedUntilItsIntervalHasPassed(): void {
         $this->feedMapper->method('findById')->willReturn($this->feed(86400, 3600));
         $this->syncService->expects(self::never())->method('syncFeed');

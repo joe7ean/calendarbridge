@@ -21,6 +21,7 @@ class PresentationTest extends TestCase {
     private function translations(): IFactory {
         $l = $this->createMock(IL10N::class);
         $l->method('t')->willReturnCallback(static fn ($text, $args = []) => vsprintf($text, $args));
+        $l->method('n')->willReturnCallback(static fn ($singular, $plural, $count) => str_replace('%n', (string)$count, $count === 1 ? $singular : $plural));
         $factory = $this->createMock(IFactory::class);
         $factory->method('get')->willReturn($l);
         return $factory;
@@ -63,6 +64,97 @@ class PresentationTest extends TestCase {
             ))->willReturnSelf();
             $event->method('setIcon')->willReturnSelf();
             (new Provider($this->translations(), $this->createMock(IURLGenerator::class), $feeds, $groups))->parse('en', $event);
+        }
+    }
+
+    public function testMissingIconDoesNotDropTheEvent(): void {
+        $feeds = $this->createMock(FeedMapper::class);
+        $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
+        $urls = $this->createMock(IURLGenerator::class);
+        $urls->method('imagePath')->willThrowException(new \RuntimeException('image not found'));
+        $event = $this->createMock(IEvent::class);
+        $event->method('getApp')->willReturn('calendarbridge');
+        $event->method('getObjectId')->willReturn(42);
+        $event->method('getSubject')->willReturn('summary');
+        $event->method('getSubjectParameters')->willReturn([]);
+        $event->expects(self::once())->method('setParsedSubject')->willReturnSelf();
+        $event->expects(self::once())->method('setIcon')->with('')->willReturnSelf();
+
+        (new Provider($this->translations(), $urls, $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
+    }
+
+    public function testIconIsAnAbsoluteUrl(): void {
+        $feeds = $this->createMock(FeedMapper::class);
+        $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
+        $urls = $this->createMock(IURLGenerator::class);
+        $urls->method('imagePath')->with('calendarbridge', 'app-dark.svg')->willReturn('/apps/calendarbridge/img/app-dark.svg');
+        $urls->method('getAbsoluteURL')->willReturnCallback(static fn ($path) => 'https://cloud.example' . $path);
+        $event = $this->createMock(IEvent::class);
+        $event->method('getApp')->willReturn('calendarbridge');
+        $event->method('getObjectId')->willReturn(42);
+        $event->method('getSubject')->willReturn('summary');
+        $event->method('getSubjectParameters')->willReturn([]);
+        $event->method('setParsedSubject')->willReturnSelf();
+        $event->expects(self::once())->method('setIcon')->with('https://cloud.example/apps/calendarbridge/img/app-dark.svg')->willReturnSelf();
+
+        (new Provider($this->translations(), $urls, $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
+    }
+
+    /** Regression guard for #2: every icon the code asks Nextcloud for is shipped. */
+    public function testEveryReferencedImageExists(): void {
+        $root = dirname(__DIR__, 3);
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root . '/lib', \FilesystemIterator::SKIP_DOTS));
+        $found = 0;
+        foreach ($files as $file) {
+            preg_match_all("/imagePath\\(\\s*Application::APP_ID\\s*,\\s*'([^']+)'/", (string)file_get_contents($file->getPathname()), $m);
+            foreach ($m[1] as $image) {
+                $found++;
+                self::assertFileExists($root . '/img/' . $image, $file->getFilename() . " references img/$image");
+            }
+        }
+        self::assertGreaterThanOrEqual(2, $found, 'imagePath() references not found; is the pattern still right?');
+    }
+
+    private function summaryText(array $counts): string {
+        $feeds = $this->createMock(FeedMapper::class);
+        $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
+        $event = $this->createMock(IEvent::class);
+        $event->method('getApp')->willReturn('calendarbridge');
+        $event->method('getObjectId')->willReturn(42);
+        $event->method('getSubject')->willReturn('summary');
+        $event->method('getSubjectParameters')->willReturn($counts);
+        $text = null;
+        $event->method('setParsedSubject')->willReturnCallback(static function ($t) use (&$text, $event) {
+            $text = $t;
+            return $event;
+        });
+        $event->method('setIcon')->willReturnSelf();
+        (new Provider($this->translations(), $this->createMock(IURLGenerator::class), $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
+        return (string)$text;
+    }
+
+    public function testSummaryNamesOnlyNonZeroCountsWithoutBoilerplate(): void {
+        self::assertSame('Calendar Bridge feed #42: 2 changed events.', $this->summaryText(['added' => 0, 'updated' => 2, 'deleted' => 0]));
+        self::assertSame(
+            'Calendar Bridge feed #42: 3 new events, 1 changed event, 1 event no longer in the source.',
+            $this->summaryText(['added' => 3, 'updated' => 1, 'deleted' => 1]),
+        );
+        self::assertSame('Calendar Bridge feed #42: 4 events no longer in the source.', $this->summaryText(['deleted' => 4]));
+        self::assertSame('Calendar Bridge feed #42: no changes.', $this->summaryText([]));
+    }
+
+    /**
+     * Nextcloud convention: app.svg is white (app menu, app management on dark
+     * backgrounds), app-dark.svg is black and gets inverted by the dark theme.
+     * App management inlines the SVG and recolours `fill`, so strokes would turn
+     * the calendar frame into a solid block.
+     */
+    public function testAppIconsFollowTheNextcloudConvention(): void {
+        $root = dirname(__DIR__, 3) . '/img/';
+        foreach (['app.svg' => '#fff', 'app-dark.svg' => '#000'] as $file => $fill) {
+            $svg = (string)file_get_contents($root . $file);
+            self::assertStringContainsString('fill="' . $fill . '"', $svg, $file);
+            self::assertStringNotContainsString('stroke', $svg, "$file must use filled shapes only");
         }
     }
 
