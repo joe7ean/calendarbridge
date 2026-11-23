@@ -21,6 +21,7 @@ class PresentationTest extends TestCase {
     private function translations(): IFactory {
         $l = $this->createMock(IL10N::class);
         $l->method('t')->willReturnCallback(static fn ($text, $args = []) => vsprintf($text, $args));
+        $l->method('n')->willReturnCallback(static fn ($singular, $plural, $count) => str_replace('%n', (string)$count, $count === 1 ? $singular : $plural));
         $factory = $this->createMock(IFactory::class);
         $factory->method('get')->willReturn($l);
         return $factory;
@@ -112,6 +113,34 @@ class PresentationTest extends TestCase {
             }
         }
         self::assertGreaterThanOrEqual(2, $found, 'imagePath() references not found; is the pattern still right?');
+    }
+
+    private function summaryText(array $counts): string {
+        $feeds = $this->createMock(FeedMapper::class);
+        $feeds->method('findById')->willThrowException(new \OCP\AppFramework\Db\DoesNotExistException(''));
+        $event = $this->createMock(IEvent::class);
+        $event->method('getApp')->willReturn('calendarbridge');
+        $event->method('getObjectId')->willReturn(42);
+        $event->method('getSubject')->willReturn('summary');
+        $event->method('getSubjectParameters')->willReturn($counts);
+        $text = null;
+        $event->method('setParsedSubject')->willReturnCallback(static function ($t) use (&$text, $event) {
+            $text = $t;
+            return $event;
+        });
+        $event->method('setIcon')->willReturnSelf();
+        (new Provider($this->translations(), $this->createMock(IURLGenerator::class), $feeds, $this->createMock(IGroupManager::class)))->parse('en', $event);
+        return (string)$text;
+    }
+
+    public function testSummaryNamesOnlyNonZeroCountsWithoutBoilerplate(): void {
+        self::assertSame('Calendar Bridge feed #42: 2 changed events.', $this->summaryText(['added' => 0, 'updated' => 2, 'deleted' => 0]));
+        self::assertSame(
+            'Calendar Bridge feed #42: 3 new events, 1 changed event, 1 event no longer in the source.',
+            $this->summaryText(['added' => 3, 'updated' => 1, 'deleted' => 1]),
+        );
+        self::assertSame('Calendar Bridge feed #42: 4 events no longer in the source.', $this->summaryText(['deleted' => 4]));
+        self::assertSame('Calendar Bridge feed #42: no changes.', $this->summaryText([]));
     }
 
     /**
