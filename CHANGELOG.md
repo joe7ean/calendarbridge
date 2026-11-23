@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Pre-release 0.4.1-beta.3 for the staged rollout (ADR 0013).
+## [0.4.1] - 2026-11-23
 
 ### Added
 
@@ -15,9 +15,6 @@ Pre-release 0.4.1-beta.3 for the staged rollout (ADR 0013).
   Following the Nextcloud convention, `img/app.svg` is white (app menu, app
   management) and `img/app-dark.svg` is black (admin settings, activity stream; the
   dark theme inverts it). Both use filled shapes only, so Nextcloud can recolour them.
-  In 0.4.1-beta.1 the colours were swapped and the icon was drawn with strokes, which
-  left it nearly invisible in the dark admin menu and turned it into a solid block in
-  app management.
 
 ### Changed
 
